@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.jobs.state import JobStateMachine, InvalidTransitionError
+from app.jobs.state import InvalidTransitionError, JobStateMachine
 
 # ── Valid transitions ────────────────────────────────────────────────────────
 

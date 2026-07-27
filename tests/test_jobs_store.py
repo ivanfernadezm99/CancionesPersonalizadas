@@ -45,9 +45,11 @@ async def test_init_db_creates_tables(tmp_path: Path) -> None:
         await init_db(conn)
 
         # Check tables exist (exclude sqlite_ internal tables)
-        cursor = await conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        sql = (
+            "SELECT name FROM sqlite_master"
+            " WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
         )
+        cursor = await conn.execute(sql)
         tables = [row[0] for row in await cursor.fetchall()]
         assert "jobs" in tables
         assert "job_transitions" in tables
@@ -82,9 +84,11 @@ async def test_init_db_is_idempotent(tmp_path: Path) -> None:
         # Call again — should not raise
         await init_db(conn)
 
-        cursor = await conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        sql = (
+            "SELECT COUNT(*) FROM sqlite_master"
+            " WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
+        cursor = await conn.execute(sql)
         count = (await cursor.fetchone())[0]
         assert count == 2  # jobs + job_transitions
     finally:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -12,7 +11,9 @@ class GenerateRequest(BaseModel):
     """Parameters for generating a personalized song."""
 
     recipient: str = Field(..., min_length=1, max_length=100, description="Name of the recipient")
-    relationship: str = Field(..., min_length=1, max_length=50, description="Relationship to recipient")
+    relationship: str = Field(
+        ..., min_length=1, max_length=50, description="Relationship to recipient"
+    )
     occasion: str = Field(..., min_length=1, max_length=100, description="Occasion for the song")
     genre: str = Field(..., min_length=1, max_length=50, description="Music genre")
     mood: str = Field(..., min_length=1, max_length=50, description="Song mood")
@@ -65,7 +66,9 @@ class JobStatusResponse(BaseModel):
     job_id: str = Field(..., description="Unique job identifier")
     status: str = Field(..., description="Current job status")
     progress: float = Field(default=0.0, ge=0.0, le=1.0, description="Progress 0.0 to 1.0")
-    estimated_remaining_seconds: int = Field(default=0, ge=0, description="Estimated seconds remaining")
+    estimated_remaining_seconds: int = Field(
+        default=0, ge=0, description="Estimated seconds remaining"
+    )
     error: str | None = Field(None, description="Error message if failed")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Arbitrary metadata")
     created_at: str = Field(..., description="ISO 8601 creation timestamp")

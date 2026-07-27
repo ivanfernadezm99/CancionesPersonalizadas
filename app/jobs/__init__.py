@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -136,6 +135,7 @@ async def count_active_jobs(
             "SELECT COUNT(*) FROM jobs WHERE status NOT IN ('complete', 'failed')",
         )
         row = await cursor.fetchone()
-        return row[0]
+        assert row is not None, "COUNT(*) should always return a row"
+        return int(row[0])
     finally:
         await conn.close()
