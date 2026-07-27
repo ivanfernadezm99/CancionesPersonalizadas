@@ -27,14 +27,14 @@ Chain strategy: feature-branch-chain
 
 ## Phase 1: Foundation (PR 1)
 
-- [ ] 1.1 Init git repo, pyproject.toml, .gitignore, ruff/black/mypy config
-- [ ] 1.2 `app/config.py` — pydantic-settings BaseSettings (LLM keys, OpenClaw, DB path)
-- [ ] 1.3 `app/models.py` — GenerateRequest, JobStatusResponse, LyricsResult, VoiceConfig
-- [ ] 1.4 TDD: `app/jobs/store.py` — SQLite conn, WAL mode, schema creation
-- [ ] 1.5 TDD: `app/jobs/state.py` — JobStateMachine with transition validation
-- [ ] 1.6 TDD: `app/jobs/__init__.py` — create_job, get_job, update_status, count_active
-- [ ] 1.7 TDD: `app/jobs/cleanup.py` — TTL cleanup, 1h interval scheduler
-- [ ] 1.8 TDD: Tests — all transitions, DB ops, cleanup behavior
+- [x] 1.1 Init git repo, pyproject.toml, .gitignore, ruff/black/mypy config
+- [x] 1.2 `app/config.py` — pydantic-settings BaseSettings (LLM keys, OpenClaw, DB path)
+- [x] 1.3 `app/models.py` — GenerateRequest, JobStatusResponse, LyricsResult, VoiceConfig
+- [x] 1.4 TDD: `app/jobs/store.py` — SQLite conn, WAL mode, schema creation
+- [x] 1.5 TDD: `app/jobs/state.py` — JobStateMachine with transition validation
+- [x] 1.6 TDD: `app/jobs/__init__.py` — create_job, get_job, update_status, count_active
+- [x] 1.7 TDD: `app/jobs/cleanup.py` — TTL cleanup, 1h interval scheduler
+- [x] 1.8 TDD: Tests — all transitions, DB ops, cleanup behavior
 
 ## Phase 2: Voice + Lyrics (PR 2)
 
