@@ -21,7 +21,7 @@ class JobStateMachine:
     """
 
     transitions: dict[str, list[str]] = {
-        "queued": ["lyrics_generating"],
+        "queued": ["lyrics_generating", "failed"],
         "lyrics_generating": ["music_generating", "failed"],
         "music_generating": ["processing", "failed"],
         "processing": ["complete", "failed"],

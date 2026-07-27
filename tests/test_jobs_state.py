@@ -13,6 +13,7 @@ from app.jobs.state import JobStateMachine, InvalidTransitionError
     ("from_status", "to_status"),
     [
         ("queued", "lyrics_generating"),
+        ("queued", "failed"),
         ("lyrics_generating", "music_generating"),
         ("lyrics_generating", "failed"),
         ("music_generating", "processing"),
@@ -41,7 +42,6 @@ def test_valid_transitions(from_status: str, to_status: str) -> None:
         ("queued", "music_generating"),
         ("queued", "processing"),
         ("queued", "complete"),
-        ("queued", "failed"),
         # Terminal states can't transition
         ("complete", "failed"),
         ("complete", "queued"),
@@ -107,7 +107,7 @@ def test_is_valid_transition_false() -> None:
 def test_possible_transitions_returns_list() -> None:
     """possible_transitions should return the list of valid targets."""
     targets = JobStateMachine.possible_transitions("queued")
-    assert targets == ["lyrics_generating"]
+    assert targets == ["lyrics_generating", "failed"]
 
 
 def test_possible_transitions_terminal() -> None:
