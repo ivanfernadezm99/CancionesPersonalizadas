@@ -48,15 +48,15 @@ Chain strategy: feature-branch-chain
 
 ## Phase 3: Music + Stream + App (PR 3)
 
-- [ ] 3.1 TDD: `app/music/openclaw.py` — client invoke/poll/download with retry
-- [ ] 3.2 TDD: `app/music/durext.py` — smart_crossfade_loop, simple_loop, extend_duration
-- [ ] 3.3 TDD: `app/music/__init__.py` — generate(), extend_duration() public API
-- [ ] 3.4 TDD: Tests — OpenClaw invoke/poll/retry, durext with synthetic MP3
-- [ ] 3.5 TDD: `app/stream/__init__.py` — async generator with disconnect guard
-- [ ] 3.6 TDD: `app/stream/router.py` — GET /api/stream/{id} with Range support
-- [ ] 3.7 TDD: Tests — 200/206/404/409/410/416, client disconnect cleanup
-- [ ] 3.8 `app/jobs/worker.py` — job_worker orchestrating lyrics→music→processing
-- [ ] 3.9 `app/main.py` — FastAPI app, lifespan, Semaphore(5), register routers
+- [x] 3.1 TDD: `app/music/openclaw.py` — client invoke/poll/download with retry
+- [x] 3.2 TDD: `app/music/durext.py` — smart_crossfade_loop, simple_loop, extend_duration
+- [x] 3.3 TDD: `app/music/__init__.py` — generate(), extend_duration() public API
+- [x] 3.4 TDD: Tests — OpenClaw invoke/poll/retry, durext with synthetic MP3
+- [x] 3.5 TDD: `app/stream/__init__.py` — async generator with disconnect guard
+- [x] 3.6 TDD: `app/stream/router.py` — GET /api/stream/{id} with Range support
+- [x] 3.7 TDD: Tests — 200/206/404/409/410/416, client disconnect cleanup
+- [x] 3.8 `app/jobs/worker.py` — job_worker orchestrating lyrics→music→processing
+- [x] 3.9 `app/main.py` — FastAPI app, lifespan, Semaphore(5), register routers
 
 ## Phase 4: Integration Tests (PR 4)
 
