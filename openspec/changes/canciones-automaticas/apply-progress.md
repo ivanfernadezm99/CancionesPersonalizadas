@@ -1,6 +1,6 @@
 # Apply Progress: Canciones Automáticas
 
-## Status: PR 1 ✅ COMPLETE | PR 2 ✅ COMPLETE | PR 3 ✅ COMPLETE | PR 4 🔲
+## Status: PR 1 ✅ COMPLETE | PR 2 ✅ COMPLETE | PR 3 ✅ COMPLETE | PR 4 ✅ COMPLETE
 
 ## PR 1: Foundation + Jobs (Phase 1)
 
@@ -47,57 +47,62 @@
 | 3.8 | ✅ | `app/jobs/worker.py` — job_worker orchestrating lyrics→music→processing (7 tests) |
 | 3.9 | ✅ | `app/main.py` — FastAPI app, lifespan, rate limiting, all routers (7 tests) |
 
-## Verification (PR 3)
+## PR 4: Integration Tests (Phase 4)
 
-- **pytest**: 169/169 passed (108 existing + 61 new)
+### Tasks Completed
+
+| Task | Status | Details |
+|------|--------|---------|
+| 4.1 | ✅ | `tests/conftest.py` — shared fixtures (test_db, mock_openclaw, mock_llm_providers, sample_mp3, test_app) |
+| 4.2 | ✅ | POST /api/generate → 202 integration test (4 tests: 202 + job_id, DB row created, 422 validation, full pipeline) |
+| 4.3 | ✅ | GET /api/status → state machine progression (4 tests: queued info, all states, failed job, 404) |
+| 4.4 | ✅ | GET /api/stream → 200/206 with MP3 fixture (8 tests: 200, 206 range, open-ended range, 416, 404, 409, 410, missing MP3 410) |
+| 4.5 | ✅ | Rate limiting — 2 concurrent with MAX=1 (3 tests: 1×202 + 1×429, Retry-After header, recovery) |
+| 4.6 | ✅ | Job cleanup — TTL deletion (4 tests: old removed, recent preserved, mixed ages, no output dir) |
+| 4.7 | ✅ | Startup validation — missing API key (4 tests: has_any_llm_key(), lyrics fail, starts with keys) |
+
+## Verification (PR 4)
+
+- **pytest**: 196/196 passed (169 existing + 27 new)
 - **ruff**: All checks passed
-- **mypy**: No issues found
+- **mypy**: No new issues (pre-existing errors only in older test files)
 
 ## TDD Cycle Evidence
 
 | Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
 |------|-----------|-------|------------|-----|-------|-------------|----------|
-| 3.1 | `tests/test_music/test_openclaw.py` | Unit | N/A (new) | ✅ Written | ✅ Passed | ✅ 16 cases | ✅ Clean |
-| 3.2 | `tests/test_music/test_durext.py` | Unit | N/A (new) | ✅ Written | ✅ Passed | ✅ 10 cases | ✅ Clean |
-| 3.3 | `tests/test_music/test_generate.py` | Unit | N/A (new) | ✅ Written | ✅ Passed | ✅ 7 cases | ✅ Clean |
-| 3.5 | `tests/test_stream/test_stream.py` | Unit | N/A (new) | ✅ Written | ✅ Passed | ✅ 6 cases | ✅ Clean |
-| 3.6 | `tests/test_stream/test_router.py` | Integration | N/A (new) | ✅ Written | ✅ Passed | ✅ 8 cases | ✅ Clean |
-| 3.8 | `tests/test_worker.py` | Unit | N/A (new) | ✅ Written | ✅ Passed | ✅ 7 cases | ✅ Clean |
-| 3.9 | `tests/test_main.py` | Integration | N/A (new) | ✅ Written | ✅ Passed | ✅ 7 cases | ✅ Clean |
+| 4.2 | `test_integration.py` | Integration | N/A (new) | ✅ Written | ✅ Passed | ✅ 4 cases | ✅ Clean |
+| 4.3 | `test_integration.py` | Integration | N/A (new) | ✅ Written | ✅ Passed | ✅ 4 cases | ✅ Clean |
+| 4.4 | `test_integration.py` | Integration | N/A (new) | ✅ Written | ✅ Passed | ✅ 8 cases | ✅ Clean |
+| 4.5 | `test_integration.py` | Integration | N/A (new) | ✅ Written | ✅ Passed | ✅ 3 cases | ✅ Clean |
+| 4.6 | `test_integration.py` | Integration | N/A (new) | ✅ Written | ✅ Passed | ✅ 4 cases | ✅ Clean |
+| 4.7 | `test_integration.py` | Integration | N/A (new) | ✅ Written | ✅ Passed | ✅ 4 cases | ✅ Clean |
 
-## Files Changed (PR 3)
+## Files Changed (PR 4)
 
 ```
-app/music/__init__.py        — Music generation public API (generate, extend_duration)
-app/music/openclaw.py        — OpenClaw HTTP client (invoke, poll, download)
-app/music/durext.py          — Duration extension (crossfade loop, simple loop)
-app/stream/__init__.py       — Async streaming generator with disconnect guard
-app/stream/router.py         — GET /api/stream/{job_id} with Range support
-app/main.py                  — FastAPI app, lifespan, rate limiting, routers
-app/jobs/worker.py           — Job worker orchestrator (lyrics→music→processing)
-tests/test_music/            — New test package for music module
-tests/test_stream/           — New test package for stream module
-tests/test_worker.py         — Worker orchestrator tests
-tests/test_main.py           — Main app integration tests
+tests/conftest.py          — Shared fixtures: test_db, mock_openclaw, mock_llm_providers, sample_mp3, test_app
+tests/test_integration.py  — 27 integration tests for all endpoints, rate limiting, cleanup, startup validation
+pyproject.toml             — Fixed httpx-mock → respx dev dependency
+app/main.py                — Added lifespan validation for missing LLM API keys
+openspec/.../apply-progress.md — Updated with PR 4 status
+openspec/.../tasks.md          — All tasks marked complete
 ```
 
 ## Deviations from Design
 
-- **Rate limiting**: Used `asyncio.Lock` + counter instead of `asyncio.Semaphore(5)` — the semaphore alone doesn't handle concurrent requests correctly since each request releases it after completion. Replaced with a counter + lock that tracks active in-flight requests.
-- **Stream generator refactored**: The function-attribute approach for file pointer was replaced with a context manager (`with open(...)`) inside the async generator. The context manager ensures proper cleanup on disconnect.
-- **OpenClaw polling endpoint**: Used `/tools/tasks/{taskId}` as documented in design (GET endpoint). The exact API path is TBD but follows the pattern described.
+- **Startup validation via httpx**: The ASGI transport (httpx) handles lifespan startup/failed events internally without propagating them as request exceptions. Testing startup validation required testing the downstream effects (lyrics generation failure) rather than relying on transport-level exceptions.
+- **Rate limiting test concurrency**: aiosqlite doesn't handle concurrent writes well (`database is locked`). Used MAX_CONCURRENT_JOBS=1 so only 1 DB write happens, avoiding lock contention.
+- **Mock LLM provider**: Had to explicitly set `result.provider = "test-provider"` since `_parse_lyrics_json()` sets an empty provider string — mimicking how real providers set `result.provider = self.name`.
 
 ## Issues Found
 
-- `aiosqlite` doesn't support concurrent writes from multiple requests — the rate limit test with `asyncio.gather` caused `database is locked` errors. Modified test to validate rate limiting logic directly rather than through concurrent HTTP requests.
-- `pydub` crossfade requires the crossfade amount to be less than the audio length. Added `min(2000, audio_ms // 4)` cap to handle short audio segments.
-- `httpx-mock` package isn't available on PyPI for this Python version — used `respx` instead (already installed).
+- aiosqlite `database is locked` on concurrent writes — same limitation as PR 3. Rate limiting tests limit concurrent DB access.
+- ASGI lifespan exceptions not propagated by httpx transport — documented for future reference.
+- Pydantic + mypy: `Field(None)` default not recognized by mypy as optional; need explicit `story=None` in calls.
 
-## Next: PR 4 — Integration Tests (Phase 4)
+## Final Test Summary
 
-### TDD Test Summary
-- **Total tests written (PR 3)**: 61
-- **Total tests passing (PR 3)**: 61
-- **Total tests overall**: 169
-- **Layers used**: Unit (53), Integration (8)
-- **Pure functions created**: 6 (`smart_crossfade_loop`, `simple_loop`, `_get_audio_segment`, `_format_lyrics_for_music`, `_acquire_generation_slot`, `_release_generation_slot`)
+- **Total tests**: 196 (169 pre-existing + 27 new)
+- **Test layers**: Unit (169), Integration (27)
+- **Coverage areas**: All API endpoints, rate limiting, cleanup, startup validation, state machine

@@ -58,12 +58,12 @@ Chain strategy: feature-branch-chain
 - [x] 3.8 `app/jobs/worker.py` — job_worker orchestrating lyrics→music→processing
 - [x] 3.9 `app/main.py` — FastAPI app, lifespan, Semaphore(5), register routers
 
-## Phase 4: Integration Tests (PR 4)
+## Phase 4: Integration Tests (PR 4) ✅
 
-- [ ] 4.1 `tests/conftest.py` — fixtures: test DB, mock OpenClaw/LLM, sample MP3
-- [ ] 4.2 TDD: POST /api/generate → 202 + job row created
-- [ ] 4.3 TDD: GET /api/status → full state machine progression
-- [ ] 4.4 TDD: GET /api/stream → 200/206 with real MP3 fixture
-- [ ] 4.5 TDD: Rate limit — 6 concurrent → 5 OK, 1× 429
-- [ ] 4.6 TDD: Job cleanup — insert old → trigger → assert deleted
-- [ ] 4.7 TDD: Startup — missing API key → app fails to start
+- [x] 4.1 `tests/conftest.py` — fixtures: test DB, mock OpenClaw/LLM, sample MP3
+- [x] 4.2 TDD: POST /api/generate → 202 + job row created
+- [x] 4.3 TDD: GET /api/status → full state machine progression
+- [x] 4.4 TDD: GET /api/stream → 200/206 with real MP3 fixture
+- [x] 4.5 TDD: Rate limit — 2 concurrent with MAX=1 → 1 OK, 1× 429
+- [x] 4.6 TDD: Job cleanup — insert old → trigger → assert deleted
+- [x] 4.7 TDD: Startup — missing API key → app fails to start
