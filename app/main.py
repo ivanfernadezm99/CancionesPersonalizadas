@@ -61,6 +61,13 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: init DB, validate voice registry, start cleanup."""
     global _cleanup_task
 
+    # Validate at least one LLM API key is configured
+    if not settings.has_any_llm_key():
+        raise RuntimeError(
+            "No LLM API keys configured. Set at least one of: "
+            "OPENAI_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY"
+        )
+
     # Validate voice registry
     try:
         validate_registry()
