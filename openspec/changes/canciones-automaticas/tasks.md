@@ -36,15 +36,15 @@ Chain strategy: feature-branch-chain
 - [x] 1.7 TDD: `app/jobs/cleanup.py` — TTL cleanup, 1h interval scheduler
 - [x] 1.8 TDD: Tests — all transitions, DB ops, cleanup behavior
 
-## Phase 2: Voice + Lyrics (PR 2)
+## Phase 2: Voice + Lyrics (PR 2) ✅
 
-- [ ] 2.1 TDD: `app/voice/registry.py` — VoiceConfig dict, startup validation
-- [ ] 2.2 TDD: `app/voice/__init__.py` — build_prompt(), get_available_voices()
-- [ ] 2.3 TDD: Tests — prompt tokens, invalid voice → 422, new voice registration
-- [ ] 2.4 `app/lyrics/prompts.py` — Spanish prompt templates per genre
-- [ ] 2.5 TDD: `app/lyrics/providers.py` — OpenAI/Gemini/OpenRouter clients + cascade
-- [ ] 2.6 TDD: `app/lyrics/__init__.py` — generate() orchestrates cascade
-- [ ] 2.7 TDD: Tests — cascade failover, output structure, no-key startup 503
+- [x] 2.1 TDD: `app/voice/registry.py` — VoiceConfig dict, startup validation
+- [x] 2.2 TDD: `app/voice/__init__.py` — build_prompt(), get_available_voices()
+- [x] 2.3 TDD: Tests — prompt tokens, invalid voice → ValueError, new voice registration
+- [x] 2.4 `app/lyrics/prompts.py` — Spanish prompt templates per genre (8 genres)
+- [x] 2.5 TDD: `app/lyrics/providers.py` — OpenAI/Gemini/OpenRouter clients + cascade
+- [x] 2.6 TDD: `app/lyrics/__init__.py` — generate() orchestrates cascade
+- [x] 2.7 TDD: Tests — cascade failover, output structure, no-key → LyricsGenerationError
 
 ## Phase 3: Music + Stream + App (PR 3)
 
