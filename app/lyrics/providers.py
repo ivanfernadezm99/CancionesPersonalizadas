@@ -156,38 +156,52 @@ class OpenAIProvider(BaseProvider):
 
 
 class GeminiProvider(BaseProvider):
-    """Lyrics generation via Google Gemini."""
+    """Lyrics generation via Google Gemini REST API."""
 
     def __init__(self, api_key: str) -> None:
         super().__init__(api_key, "gemini")
-        self._model = None
-
-    def _get_model(self) -> genai.GenerativeModel:
-        """Lazy import and initialize the Gemini model."""
-        import google.generativeai as genai
-
-        if self._model is not None:
-            return self._model
-
-        genai.configure(api_key=self.api_key)
-        self._model = genai.GenerativeModel("gemini-2.0-flash")
-        return self._model
+        self._client = httpx.AsyncClient(timeout=60.0)
+        self._model = "gemini-flash-latest"
 
     async def generate(self, prompt: str) -> LyricsResult | None:
-        logger.info("Generating lyrics with Gemini...")
+        logger.info("Generating lyrics with Gemini (%s)...", self._model)
         try:
-            model = self._get_model()
-            response = await model.generate_content_async(
-                "Eres un compositor de canciones románticas en español.\n"
-                f"{prompt}\n\n"
-                "Devuelve SOLO un objeto JSON válido."
+            url = (
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{self._model}:generateContent?key={self.api_key}"
             )
+            response = await self._client.post(
+                url,
+                json={
+                    "contents": [{
+                        "parts": [{
+                            "text": (
+                                "Eres un compositor de canciones románticas en español.\n"
+                                f"{prompt}\n\n"
+                                "Devuelve SOLO un objeto JSON válido."
+                            )
+                        }]
+                    }],
+                    "generationConfig": {
+                        "temperature": 0.8,
+                        "maxOutputTokens": 1500,
+                    },
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
 
-            if not response.text:
-                logger.warning("Gemini returned empty response")
+            candidates = data.get("candidates", [])
+            if not candidates:
+                logger.warning("Gemini returned no candidates")
                 return None
 
-            result = _parse_lyrics_json(response.text)
+            text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            if not text:
+                logger.warning("Gemini returned empty text")
+                return None
+
+            result = _parse_lyrics_json(text)
             if result is not None:
                 result.provider = self.name
             return result
