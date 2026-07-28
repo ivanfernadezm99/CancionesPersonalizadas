@@ -7,8 +7,48 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.lyrics import generate
+from app.lyrics.prompts import build_user_prompt
 from app.lyrics.providers import LyricsGenerationError
 from app.models import LyricsResult
+
+
+class TestBuildUserPromptReferenceSong:
+    """Tests for build_user_prompt with reference_song param."""
+
+    def test_with_reference_song_includes_style_guidance(self) -> None:
+        """build_user_prompt with reference_song should include style hint."""
+        prompt = build_user_prompt(
+            recipient="María",
+            relationship="pareja",
+            occasion="aniversario",
+            genre="bachata",
+            mood="romántica",
+            reference_song="Bachata Rosa - Juan Luis Guerra",
+        )
+        assert "Bachata Rosa" in prompt
+        assert "Juan Luis Guerra" in prompt
+        assert "Inspírate" in prompt or "referencia" in prompt.lower()
+
+    def test_without_reference_song_is_unchanged(self) -> None:
+        """build_user_prompt without reference_song should not include style hint."""
+        prompt_with = build_user_prompt(
+            recipient="María",
+            relationship="pareja",
+            occasion="aniversario",
+            genre="bachata",
+            mood="romántica",
+            reference_song="Bachata Rosa",
+        )
+        prompt_without = build_user_prompt(
+            recipient="María",
+            relationship="pareja",
+            occasion="aniversario",
+            genre="bachata",
+            mood="romántica",
+        )
+        assert "Bachata Rosa" in prompt_with
+        assert "Bachata Rosa" not in prompt_without
+        assert prompt_with != prompt_without
 
 
 @pytest.fixture
@@ -148,3 +188,28 @@ async def test_generate_without_story(
         )
         assert got is not None
         assert got.provider == "openai"
+
+
+@pytest.mark.asyncio
+async def test_generate_with_reference_song_passes_through(
+    sample_result: LyricsResult, mock_provider: MagicMock,
+) -> None:
+    """generate() with reference_song should pass it to build_user_prompt."""
+    with patch("app.lyrics.cascade_providers", new_callable=AsyncMock) as mock_cascade, \
+         patch("app.lyrics._build_providers", return_value=[mock_provider]):
+        mock_cascade.return_value = sample_result
+
+        got = await generate(
+            recipient="María",
+            relationship="pareja",
+            occasion="aniversario",
+            genre="bachata",
+            mood="romántica",
+            reference_song="Bachata Rosa - Juan Luis Guerra",
+        )
+        assert got is not None
+
+        prompt_arg = mock_cascade.call_args[0][1]
+        # Cascade receives the full prompt which includes the reference song
+        assert "Bachata Rosa" in prompt_arg
+        assert "Juan Luis Guerra" in prompt_arg

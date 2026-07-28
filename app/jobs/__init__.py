@@ -15,10 +15,21 @@ async def create_job(
     params: GenerateRequest,
     *,
     db_path: str = "jobs.db",
+    initial_metadata: str | None = None,
 ) -> str:
-    """Create a new job in queued status. Returns the job_id (UUID v4)."""
+    """Create a new job in queued status. Returns the job_id (UUID v4).
+
+    Args:
+        params: Generation parameters.
+        db_path: Path to the SQLite database.
+        initial_metadata: Optional JSON string to store as initial metadata.
+
+    Returns:
+        The new job's UUID string.
+    """
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
+    metadata_value = initial_metadata or "{}"
 
     conn = await get_connection(db_path)
     try:
@@ -26,8 +37,8 @@ async def create_job(
         await conn.execute(
             """INSERT INTO jobs (job_id, status, params, progress, estimated_remaining,
                                  error, metadata, created_at, updated_at)
-               VALUES (?, 'queued', ?, 0.0, 180, NULL, '{}', ?, ?)""",
-            (job_id, params.model_dump_json(), now, now),
+               VALUES (?, 'queued', ?, 0.0, 180, NULL, ?, ?, ?)""",
+            (job_id, params.model_dump_json(), metadata_value, now, now),
         )
         await conn.commit()
     finally:

@@ -82,3 +82,70 @@ class JobCreateResponse(BaseModel):
     status: str = Field(default="queued", description="Initial job status")
     estimated_total_seconds: int = Field(default=180, description="Estimated total processing time")
     endpoints: dict[str, str] = Field(..., description="Status and stream endpoint URLs")
+
+
+# ── Song Project Models ───────────────────────────────────────────────────────
+
+
+class SongProjectCreate(BaseModel):
+    """Create a new iterative song project."""
+
+    recipient: str = Field(..., min_length=1, max_length=100)
+    relationship: str = Field(default="pareja", min_length=1, max_length=50)
+    genre: str = Field(default="balada romántica", min_length=1, max_length=50)
+    mood: str = Field(default="romántico", min_length=1, max_length=50)
+    voice: str = Field(default="male", min_length=1, max_length=50)
+    reference_song: str | None = Field(
+        None, max_length=200, description="Optional reference song for style (e.g. 'Bachata Rosa - Juan Luis Guerra')"
+    )
+
+
+class StoryFragmentAdd(BaseModel):
+    """Add a story fragment to a project."""
+
+    text: str = Field(..., min_length=1, max_length=2000, description="Story fragment to accumulate")
+
+
+class SongProjectUpdate(BaseModel):
+    """Update project settings or add a story fragment."""
+
+    genre: str | None = Field(None, min_length=1, max_length=50)
+    mood: str | None = Field(None, min_length=1, max_length=50)
+    voice: str | None = Field(None, min_length=1, max_length=50)
+    reference_song: str | None = Field(None, max_length=200)
+    fragment: StoryFragmentAdd | None = None
+
+
+class StoryFragmentResponse(BaseModel):
+    """A story fragment in a project."""
+
+    id: int
+    text: str
+    sort_order: int
+    created_at: str
+
+
+class ProjectPreview(BaseModel):
+    """A generated preview for a project."""
+
+    job_id: str
+    job_type: str  # "preview" or "final"
+    status: str
+    created_at: str
+
+
+class SongProjectResponse(BaseModel):
+    """Full project response with fragments and previews."""
+
+    id: str
+    recipient: str
+    relationship: str
+    genre: str
+    mood: str
+    voice: str
+    reference_song: str | None
+    status: str
+    fragments: list[StoryFragmentResponse]
+    previews: list[ProjectPreview]
+    created_at: str
+    updated_at: str

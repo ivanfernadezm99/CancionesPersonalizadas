@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     # Max concurrent jobs
     MAX_CONCURRENT_JOBS: int = 5
 
+    # Project settings
+    PREVIEW_TARGET_SECONDS: int = 30
+    FINAL_TARGET_SECONDS: int = 150
+
     @field_validator("OPENCLAW_BASE_URL")
     @classmethod
     def strip_trailing_slash(cls, v: str) -> str:

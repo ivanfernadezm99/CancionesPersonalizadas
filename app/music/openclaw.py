@@ -33,7 +33,7 @@ class OpenClawClient:
             "Content-Type": "application/json",
         }
 
-    async def invoke(self, lyrics: str, prompt: str) -> str:
+    async def invoke(self, lyrics: str, prompt: str, model: str = "google/lyria-3-clip-preview") -> str:
         """Invoke music generation via OpenClaw.
 
         Posts to /tools/invoke with retry (2 attempts, 10s backoff).
@@ -41,6 +41,7 @@ class OpenClawClient:
         Args:
             lyrics: Full lyrics text with markers.
             prompt: Style/genre prompt for Lyria 3.
+            model: OpenClaw model name (default: google/lyria-3-clip-preview).
 
         Returns:
             Task ID for polling.
@@ -54,7 +55,7 @@ class OpenClawClient:
                 "prompt": prompt,
                 "lyrics": lyrics,
                 "instrumental": False,
-                "model": "google/lyria-3-clip-preview",
+                "model": model,
                 "format": "mp3",
             },
         }

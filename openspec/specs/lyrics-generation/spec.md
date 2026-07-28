@@ -117,6 +117,7 @@ The system SHOULD apply prompt engineering optimized for Spanish romantic poetry
 - Encourage genre-appropriate rhyme schemes (asonante for ballads, consonante for bachata)
 - Include recipient name naturally in at least the chorus
 - Use genre-typical vocabulary and rhythm hints
+- When `reference_song` is provided, instruct the model to match that song's style, rhythm, and thematic elements
 
 #### Scenario: Genre-appropriate vocabulary
 
@@ -131,6 +132,13 @@ The system SHOULD apply prompt engineering optimized for Spanish romantic poetry
 - WHEN lyrics are generated
 - THEN the recipient name "Carlos" MUST appear in the chorus
 - AND the name SHOULD appear at least once in the verses
+
+#### Scenario: Reference song overrides genre defaults
+
+- GIVEN reference_song="El Amor - José José" and genre="balada romántica"
+- WHEN the prompt includes the reference
+- THEN lyrics SHOULD match the romantic ballad style of the reference
+- AND the reference song name MUST appear in the prompt
 
 ### RQ-LYR-05: Provider Key Validation
 
@@ -150,6 +158,24 @@ The system MUST validate that at least one LLM provider API key is configured at
 - THEN it MUST log a warning about missing Gemini and OpenRouter keys
 - BUT it MUST still accept /api/generate requests
 - AND only attempt OpenAI for lyrics generation
+
+### RQ-LYR-06: Reference Song Influence
+
+The system MUST accept an optional `reference_song` parameter in the lyrics generation context (from project settings). When provided, the LLM prompt MUST include style/melody guidance referencing that song.
+
+#### Scenario: Reference song in lyrics prompt
+
+- GIVEN a project with reference_song="Bachata Rosa - Juan Luis Guerra"
+- WHEN the lyrics prompt is constructed
+- THEN the prompt MUST include "al estilo de Bachata Rosa - Juan Luis Guerra"
+- AND the output SHOULD reflect bachata romantic structure
+
+#### Scenario: No reference song
+
+- GIVEN lyrics generation without reference_song
+- WHEN the prompt is constructed
+- THEN the prompt MUST NOT include style references
+- AND behavior MUST match existing lyrics generation
 
 ## Edge Cases
 

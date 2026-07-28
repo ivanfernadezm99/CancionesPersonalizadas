@@ -14,7 +14,12 @@ SYSTEM_PROMPT: Final[str] = (
     "apropiada para el género musical solicitado. "
     "Las letras deben ser en español natural, romántico y emotivo. "
     "Cada verso debe tener 4 líneas. El coro debe tener 4 líneas. "
-    "Incluye el nombre del destinatario en el coro y al menos una vez en los versos. "
+    "IMPORTANTE: NO menciones el nombre del destinatario en los versos ni en el coro. "
+    "El nombre SOLO debe aparecer en el ÚLTIMO verso o en el puente final, "
+    "como revelación sorpresa al cerrar la canción. "
+    "Cuenta la historia de forma natural y humana, no todo perfecto — "
+    "incluye detalles reales, imperfecciones, momentos cotidianos que hacen "
+    "el amor auténtico (facturas que casi no come, timidez, miradas cómplices). "
     "Las líneas deben tener entre 10 y 100 caracteres cada una. "
     "Devuelve SOLO un objeto JSON válido con esta estructura exacta, sin texto adicional:\n"
     '{\n'
@@ -87,6 +92,7 @@ def build_user_prompt(
     genre: str,
     mood: str,
     story: str | None = None,
+    reference_song: str | None = None,
 ) -> str:
     """Build the full user prompt for the LLM based on input parameters.
 
@@ -97,6 +103,7 @@ def build_user_prompt(
         genre: Musical genre.
         mood: Emotional tone.
         story: Optional personal story or anecdote (max 2000 chars).
+        reference_song: Optional reference song for musical style inspiration.
 
     Returns:
         A complete Spanish prompt string for the LLM.
@@ -104,7 +111,7 @@ def build_user_prompt(
     genre_instructions = _GENRE_PROMPTS.get(genre.lower(), _GENRE_PROMPTS["pop"])
 
     parts = [
-        f"Escribe una canción romántica para {recipient}, mi {relationship}.",
+        f"Escribe una canción romántica para alguien muy especial, mi {relationship}.",
         f"Ocasión: {occasion}.",
         f"Tono: {mood}.",
         genre_instructions,
@@ -112,11 +119,21 @@ def build_user_prompt(
 
     if story:
         story = story[:2000]
-        parts.append(f"Anecdoticas personales para incluir: {story}")
+        parts.append(
+            f"Historia real y personal para inspirar la letra (NO menciones el "
+            f"nombre aún, solo al final): {story}"
+        )
+
+    if reference_song:
+        parts.append(
+            f"Referencia musical: {reference_song}. Inspírate en el estilo musical "
+            f"de esta canción para la composición, manteniendo la esencia romántica."
+        )
 
     parts.append(
-        f"Asegúrate de que el nombre '{recipient}' aparezca en el coro "
-        f"y al menos una vez en los versos."
+        f"IMPORTANTE: El nombre '{recipient}' SOLO debe aparecer en el ÚLTIMO verso "
+        f"o en el puente final. NO lo menciones en el coro ni en los primeros versos. "
+        f"Es una sorpresa que se revela al cerrar la canción."
     )
 
     return "\n\n".join(parts)

@@ -25,7 +25,12 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-async def generate(lyrics: str, voice_prompt: str) -> Path:
+async def generate(
+    lyrics: str,
+    voice_prompt: str,
+    model: str = "google/lyria-3-clip-preview",
+    job_id: str | None = None,
+) -> Path:
     """Generate music from lyrics and voice prompt via OpenClaw.
 
     Invokes OpenClaw, polls for completion, downloads the MP3,
@@ -34,6 +39,8 @@ async def generate(lyrics: str, voice_prompt: str) -> Path:
     Args:
         lyrics: Full lyrics text.
         voice_prompt: Style/genre voice prompt for Lyria 3.
+        model: OpenClaw model name (default: google/lyria-3-clip-preview).
+        job_id: Optional job ID for output subdirectory. Uses random UUID if None.
 
     Returns:
         Path to the saved MP3 file.
@@ -41,7 +48,8 @@ async def generate(lyrics: str, voice_prompt: str) -> Path:
     Raises:
         OpenClawError: If music generation fails at any stage.
     """
-    job_id = str(uuid.uuid4())
+    if job_id is None:
+        job_id = str(uuid.uuid4())
     output_dir = Path(settings.OUTPUT_DIR) / job_id
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "generated.mp3"
@@ -52,7 +60,7 @@ async def generate(lyrics: str, voice_prompt: str) -> Path:
     )
 
     logger.info("Music generation: invoking OpenClaw (job_id=%s)", job_id)
-    task_id = await client.invoke(lyrics=lyrics, prompt=voice_prompt)
+    task_id = await client.invoke(lyrics=lyrics, prompt=voice_prompt, model=model)
 
     logger.info("Music generation: polling task %s", task_id)
     download_url = await client.poll(task_id, timeout=300)

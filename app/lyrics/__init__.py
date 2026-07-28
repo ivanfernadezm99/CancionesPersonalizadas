@@ -45,6 +45,7 @@ async def generate(
     genre: str,
     mood: str,
     story: str | None = None,
+    reference_song: str | None = None,
 ) -> LyricsResult:
     """Generate lyrics using the multi-provider cascade.
 
@@ -55,6 +56,7 @@ async def generate(
         genre: Musical genre.
         mood: Emotional tone.
         story: Optional personal story or anecdote.
+        reference_song: Optional reference song for style inspiration.
 
     Returns:
         A structured LyricsResult containing verses, chorus, and metadata.
@@ -69,6 +71,7 @@ async def generate(
         genre=genre,
         mood=mood,
         story=story,
+        reference_song=reference_song,
     )
 
     full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"

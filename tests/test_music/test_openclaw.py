@@ -108,6 +108,57 @@ class TestOpenClawClientInvoke:
             assert payload["args"]["format"] == "mp3"
 
     @pytest.mark.asyncio
+    async def test_invoke_uses_model_param(self, client: OpenClawClient) -> None:
+        """invoke() should use the model parameter in the payload."""
+        async with respx.mock:
+            route = respx.post("http://localhost:18789/tools/invoke").respond(
+                200,
+                json={
+                    "ok": True,
+                    "result": {
+                        "details": {
+                            "async": True,
+                            "status": "started",
+                            "task": {"taskId": "task-custom-model"},
+                        },
+                    },
+                },
+            )
+
+            await client.invoke(
+                lyrics="Test", prompt="Test",
+                model="google/lyria-3-pro-preview",
+            )
+
+            import json
+            payload = json.loads(route.calls[0].request.content)
+            assert payload["args"]["model"] == "google/lyria-3-pro-preview"
+
+    @pytest.mark.asyncio
+    async def test_invoke_default_model(self, client: OpenClawClient) -> None:
+        """invoke() should default to google/lyria-3-clip-preview."""
+        async with respx.mock:
+            route = respx.post("http://localhost:18789/tools/invoke").respond(
+                200,
+                json={
+                    "ok": True,
+                    "result": {
+                        "details": {
+                            "async": True,
+                            "status": "started",
+                            "task": {"taskId": "task-default-model"},
+                        },
+                    },
+                },
+            )
+
+            await client.invoke(lyrics="Test", prompt="Test")
+
+            import json
+            payload = json.loads(route.calls[0].request.content)
+            assert payload["args"]["model"] == "google/lyria-3-clip-preview"
+
+    @pytest.mark.asyncio
     async def test_invoke_retries_on_failure(self, client: OpenClawClient) -> None:
         """invoke() should retry once on failure (2 attempts, 10s backoff)."""
         async with respx.mock:

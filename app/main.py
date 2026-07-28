@@ -222,4 +222,7 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
 
 # ── Register Routers ─────────────────────────────────────────────────────────
 
+from app.projects.router import router as projects_router
+
 app.include_router(stream_router)
+app.include_router(projects_router)

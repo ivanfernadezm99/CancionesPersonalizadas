@@ -35,7 +35,7 @@ class TestBuildPrompt:
         """Prompt should be a natural Spanish sentence."""
         prompt = build_prompt("female", "salsa", "festiva")
         assert "canción" in prompt.lower()
-        assert "música" in prompt.lower() or "estilo" in prompt.lower()
+        assert "melodía" in prompt.lower()
 
     def test_invalid_voice_raises_valueerror(self) -> None:
         """Invalid voice_id should raise ValueError with valid options."""
@@ -53,6 +53,26 @@ class TestBuildPrompt:
         """Empty voice_id should raise ValueError."""
         with pytest.raises(ValueError):
             build_prompt("", "bachata", "romántica")
+
+    def test_with_reference_song_includes_style_text(self) -> None:
+        """build_prompt with reference_song should include style reference."""
+        prompt = build_prompt(
+            "female", "bachata", "romántica",
+            reference_song="Bachata Rosa - Juan Luis Guerra",
+        )
+        assert "Inspirada en el estilo de" in prompt
+        assert "Bachata Rosa" in prompt
+        assert "Juan Luis Guerra" in prompt
+
+    def test_without_reference_song_is_unchanged(self) -> None:
+        """build_prompt without reference_song should not include style text."""
+        prompt_with = build_prompt(
+            "female", "bachata", "romántica",
+            reference_song="Bachata Rosa - Juan Luis Guerra",
+        )
+        prompt_without = build_prompt("female", "bachata", "romántica")
+        assert "Inspirada en el estilo de" in prompt_with
+        assert "Inspirada en el estilo de" not in prompt_without
 
 
 class TestGetAvailableVoices:
