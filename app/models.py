@@ -18,7 +18,7 @@ class GenerateRequest(BaseModel):
     genre: str = Field(..., min_length=1, max_length=50, description="Music genre")
     mood: str = Field(..., min_length=1, max_length=50, description="Song mood")
     story: str | None = Field(None, max_length=2000, description="Optional personal story")
-    voice: str = Field(..., min_length=1, max_length=50, description="Voice ID for generation")
+    voice: str = Field(default="female", min_length=1, max_length=50, description="Voice ID for generation")
 
 
 class Verse(BaseModel):
