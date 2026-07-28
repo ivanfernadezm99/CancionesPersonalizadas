@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS projects (
     mood            TEXT NOT NULL DEFAULT 'romántico',
     voice           TEXT NOT NULL DEFAULT 'male',
     reference_song  TEXT,
+    reference_description TEXT,
     status          TEXT NOT NULL DEFAULT 'draft'
                     CHECK(status IN ('draft', 'complete')),
     created_at      TEXT NOT NULL,
@@ -72,11 +73,24 @@ async def _get_conn(db_path: str) -> aiosqlite.Connection:
 async def init_schema(db_path: str, conn: aiosqlite.Connection | None = None) -> None:
     if conn is not None:
         await conn.executescript(SCHEMA_SQL)
+        # Migration: add reference_description if missing
+        try:
+            await conn.execute(
+                "ALTER TABLE projects ADD COLUMN reference_description TEXT"
+            )
+        except aiosqlite.OperationalError:
+            pass
         await conn.commit()
         return
     conn = await _get_conn(db_path)
     try:
         await conn.executescript(SCHEMA_SQL)
+        try:
+            await conn.execute(
+                "ALTER TABLE projects ADD COLUMN reference_description TEXT"
+            )
+        except aiosqlite.OperationalError:
+            pass
         await conn.commit()
     finally:
         await conn.close()
@@ -90,10 +104,10 @@ async def create_project(data: SongProjectCreate, *, db_path: str) -> str:
         await init_schema(db_path, conn=conn)
         await conn.execute(
             """INSERT INTO projects (id, recipient, relationship, genre, mood, voice,
-                                      reference_song, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                      reference_song, reference_description, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (project_id, data.recipient, data.relationship, data.genre,
-             data.mood, data.voice, data.reference_song, now, now),
+             data.mood, data.voice, data.reference_song, data.reference_description, now, now),
         )
         await conn.commit()
     finally:
@@ -153,7 +167,7 @@ async def update_project(
         # Update scalar fields if provided
         updates: list[str] = []
         params: list[Any] = []
-        for field in ("genre", "mood", "voice", "reference_song"):
+        for field in ("genre", "mood", "voice", "reference_song", "reference_description"):
             val = getattr(data, field, None)
             if val is not None:
                 updates.append(f"{field} = ?")

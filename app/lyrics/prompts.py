@@ -93,6 +93,7 @@ def build_user_prompt(
     mood: str,
     story: str | None = None,
     reference_song: str | None = None,
+    reference_description: str | None = None,
 ) -> str:
     """Build the full user prompt for the LLM based on input parameters.
 
@@ -103,7 +104,8 @@ def build_user_prompt(
         genre: Musical genre.
         mood: Emotional tone.
         story: Optional personal story or anecdote (max 2000 chars).
-        reference_song: Optional reference song for musical style inspiration.
+        reference_song: Optional reference song name for style inspiration.
+        reference_description: Optional detailed style description from audio analysis.
 
     Returns:
         A complete Spanish prompt string for the LLM.
@@ -128,6 +130,13 @@ def build_user_prompt(
         parts.append(
             f"Referencia musical: {reference_song}. Inspírate en el estilo musical "
             f"de esta canción para la composición, manteniendo la esencia romántica."
+        )
+
+    if reference_description:
+        parts.append(
+            f"Descripción detallada del estilo musical de referencia: "
+            f"{reference_description}. Adapta la letra para que encaje con este "
+            f"estilo musical en cuanto a tempo, energía y sentimiento."
         )
 
     parts.append(

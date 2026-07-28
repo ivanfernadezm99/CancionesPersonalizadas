@@ -80,6 +80,7 @@ async def create_preview_job(project_id: str) -> JobCreateResponse:
         "model": PREVIEW_MODEL,
         "duration_target": settings.PREVIEW_TARGET_SECONDS,
         "reference_song": project.get("reference_song"),
+        "reference_description": project.get("reference_description"),
         "job_type": "preview",
     }
 
@@ -145,6 +146,7 @@ async def create_final_job(project_id: str) -> JobCreateResponse:
         "model": FINAL_MODEL,
         "duration_target": settings.FINAL_TARGET_SECONDS,
         "reference_song": project.get("reference_song"),
+        "reference_description": project.get("reference_description"),
         "job_type": "final",
     }
 
@@ -191,6 +193,7 @@ async def project_worker(job_id: str) -> None:
         model = metadata.get("model", PREVIEW_MODEL)
         duration_target = metadata.get("duration_target")
         reference_song = metadata.get("reference_song")
+        reference_description = metadata.get("reference_description")
         job_type = metadata.get("job_type", "preview")
 
         params_dict = json.loads(job["params"])
@@ -210,6 +213,7 @@ async def project_worker(job_id: str) -> None:
             mood=params.mood,
             story=params.story,
             reference_song=reference_song,
+            reference_description=reference_description,
         )
 
         lyrics_text = _format_lyrics_for_music(lyrics_result)
@@ -225,6 +229,7 @@ async def project_worker(job_id: str) -> None:
             genre=params.genre,
             mood=params.mood,
             reference_song=reference_song,
+            reference_description=reference_description,
         )
 
         generated_path = await music_generate(

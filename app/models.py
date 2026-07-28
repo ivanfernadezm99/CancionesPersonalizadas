@@ -98,6 +98,9 @@ class SongProjectCreate(BaseModel):
     reference_song: str | None = Field(
         None, max_length=200, description="Optional reference song for style (e.g. 'Bachata Rosa - Juan Luis Guerra')"
     )
+    reference_description: str | None = Field(
+        None, max_length=1000, description="Auto-generated style description from uploaded audio reference"
+    )
 
 
 class StoryFragmentAdd(BaseModel):
@@ -113,6 +116,7 @@ class SongProjectUpdate(BaseModel):
     mood: str | None = Field(None, min_length=1, max_length=50)
     voice: str | None = Field(None, min_length=1, max_length=50)
     reference_song: str | None = Field(None, max_length=200)
+    reference_description: str | None = Field(None, max_length=1000)
     fragment: StoryFragmentAdd | None = None
 
 
@@ -144,8 +148,21 @@ class SongProjectResponse(BaseModel):
     mood: str
     voice: str
     reference_song: str | None
+    reference_description: str | None
     status: str
     fragments: list[StoryFragmentResponse]
     previews: list[ProjectPreview]
     created_at: str
     updated_at: str
+
+
+class AudioReferenceResponse(BaseModel):
+    """Response for audio reference upload and analysis."""
+
+    project_id: str
+    language: str = "es"
+    transcript_preview: str = ""
+    duration_seconds: float = 0.0
+    energy: str = "media"
+    estimated_tempo: str = "medio"
+    style_description: str = ""

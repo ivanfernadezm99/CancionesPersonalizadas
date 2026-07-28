@@ -1,14 +1,20 @@
 """FastAPI router for song project management.
 
-Provides endpoints for creating, reading, updating projects, and
-generating preview/final songs via the project orchestrator.
+Provides endpoints for creating, reading, updating projects,
+uploading audio references, and generating preview/final songs.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+import shutil
+import tempfile
+from pathlib import Path
 
+from fastapi import APIRouter, HTTPException, UploadFile, status
+
+from app.audio_analysis import analyze_audio
 from app.models import (
+    AudioReferenceResponse,
     JobCreateResponse,
     SongProjectCreate,
     SongProjectResponse,
@@ -51,6 +57,7 @@ def _project_to_response(project: dict) -> SongProjectResponse:
         mood=project["mood"],
         voice=project["voice"],
         reference_song=project.get("reference_song"),
+        reference_description=project.get("reference_description"),
         status=project["status"],
         fragments=fragments,
         previews=previews,
@@ -160,3 +167,68 @@ async def create_final(project_id: str) -> JobCreateResponse:
                 detail={"error": "project_not_found", "project_id": project_id},
             )
         raise
+
+
+@router.post("/{project_id}/reference-audio")
+async def upload_reference_audio(
+    project_id: str, file: UploadFile,
+) -> AudioReferenceResponse:
+    """Upload an audio file as style reference for the project.
+
+    Accepts MP3 files up to 20 MB. Analyzes the audio with Whisper
+    (transcription + language detection) and pydub (duration, energy,
+    tempo) to generate a style description used by Lyria 3.
+
+    The description is stored on the project and used in subsequent
+    preview/final generations.
+    """
+    from app.config import settings
+
+    # Validate file type
+    if not file.filename or not file.filename.lower().endswith(".mp3"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "invalid_format", "message": "Only MP3 files are supported"},
+        )
+
+    # Check project exists
+    project = await store.get_project(project_id, db_path=settings.DB_PATH)
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "project_not_found", "project_id": project_id},
+        )
+
+    # Save uploaded file to temp
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = Path(tmp.name)
+
+    try:
+        # Analyze
+        result = analyze_audio(tmp_path)
+
+        if hasattr(result, "error"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"error": "analysis_failed", "detail": result.detail},
+            )
+
+        # Store description on project
+        await store.update_project(
+            project_id,
+            SongProjectUpdate(reference_description=result.style_description),
+            db_path=settings.DB_PATH,
+        )
+
+        return AudioReferenceResponse(
+            project_id=project_id,
+            language=result.language,
+            transcript_preview=result.transcript[:200] if result.transcript else "",
+            duration_seconds=result.duration_seconds,
+            energy=result.energy,
+            estimated_tempo=result.estimated_tempo,
+            style_description=result.style_description,
+        )
+    finally:
+        tmp_path.unlink(missing_ok=True)

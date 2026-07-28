@@ -38,6 +38,7 @@ def build_prompt(
     genre: str,
     mood: str,
     reference_song: str | None = None,
+    reference_description: str | None = None,
 ) -> str:
     """Build a Lyria 3 prompt combining voice descriptor, genre, and mood.
 
@@ -45,7 +46,8 @@ def build_prompt(
         voice_id: Voice identifier (e.g. "female", "male").
         genre: Musical genre (e.g. "bachata", "balada", "reggaeton").
         mood: Emotional tone (e.g. "romántica", "festiva").
-        reference_song: Optional reference song for style inspiration.
+        reference_song: Optional reference song name for style inspiration.
+        reference_description: Optional detailed style description from audio analysis.
 
     Returns:
         A Spanish prompt string suitable for Lyria 3 music generation.
@@ -68,6 +70,8 @@ def build_prompt(
         f"Calidad de producción profesional, sonido cálido con instrumentos reales. "
         f"Duración mínima 2:30."
     )
-    if reference_song:
+    if reference_description:
+        prompt += f" {reference_description}"
+    elif reference_song:
         prompt += f" Inspirada en el estilo de {reference_song}."
     return prompt
