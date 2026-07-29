@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS projects (
     voice           TEXT NOT NULL DEFAULT 'male',
     reference_song  TEXT,
     reference_description TEXT,
+    chaining_enabled INTEGER NOT NULL DEFAULT 0,
     status          TEXT NOT NULL DEFAULT 'draft'
                     CHECK(status IN ('draft', 'complete')),
     created_at      TEXT NOT NULL,
@@ -80,6 +81,12 @@ async def init_schema(db_path: str, conn: aiosqlite.Connection | None = None) ->
             )
         except aiosqlite.OperationalError:
             pass
+        try:
+            await conn.execute(
+                "ALTER TABLE projects ADD COLUMN chaining_enabled INTEGER NOT NULL DEFAULT 0"
+            )
+        except aiosqlite.OperationalError:
+            pass
         await conn.commit()
         return
     conn = await _get_conn(db_path)
@@ -88,6 +95,12 @@ async def init_schema(db_path: str, conn: aiosqlite.Connection | None = None) ->
         try:
             await conn.execute(
                 "ALTER TABLE projects ADD COLUMN reference_description TEXT"
+            )
+        except aiosqlite.OperationalError:
+            pass
+        try:
+            await conn.execute(
+                "ALTER TABLE projects ADD COLUMN chaining_enabled INTEGER NOT NULL DEFAULT 0"
             )
         except aiosqlite.OperationalError:
             pass
@@ -104,10 +117,12 @@ async def create_project(data: SongProjectCreate, *, db_path: str) -> str:
         await init_schema(db_path, conn=conn)
         await conn.execute(
             """INSERT INTO projects (id, recipient, relationship, genre, mood, voice,
-                                      reference_song, reference_description, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                       reference_song, reference_description, chaining_enabled,
+                                       created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (project_id, data.recipient, data.relationship, data.genre,
-             data.mood, data.voice, data.reference_song, data.reference_description, now, now),
+             data.mood, data.voice, data.reference_song, data.reference_description,
+             int(data.chaining_enabled), now, now),
         )
         await conn.commit()
     finally:
@@ -167,7 +182,7 @@ async def update_project(
         # Update scalar fields if provided
         updates: list[str] = []
         params: list[Any] = []
-        for field in ("genre", "mood", "voice", "reference_song", "reference_description"):
+        for field in ("genre", "mood", "voice", "reference_song", "reference_description", "chaining_enabled"):
             val = getattr(data, field, None)
             if val is not None:
                 updates.append(f"{field} = ?")

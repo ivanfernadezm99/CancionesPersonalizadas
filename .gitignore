@@ -47,3 +47,6 @@ htmlcov/
 
 # Logs
 *.log
+# Local AI runtime state
+.atl/
+.playwright-mcp/

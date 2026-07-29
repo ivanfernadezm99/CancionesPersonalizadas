@@ -19,7 +19,8 @@ from app.lyrics import generate as lyrics_generate
 from app.models import GenerateRequest, JobCreateResponse, SongProjectCreate
 from app.music import extend_duration
 from app.music import generate as music_generate
-from app.projects import store
+from app.music.clipchain import generate_stitched
+from app.projects import ref_audio, store
 from app.voice import build_prompt
 
 logger = logging.getLogger(__name__)
@@ -141,6 +142,8 @@ async def create_final_job(project_id: str) -> JobCreateResponse:
         voice=project["voice"],
     )
 
+    chaining_enabled = bool(project.get("chaining_enabled", False))
+
     metadata = {
         "project_id": project_id,
         "model": FINAL_MODEL,
@@ -148,6 +151,8 @@ async def create_final_job(project_id: str) -> JobCreateResponse:
         "reference_song": project.get("reference_song"),
         "reference_description": project.get("reference_description"),
         "job_type": "final",
+        "chaining_enabled": chaining_enabled,
+        "num_clips": settings.MAX_CLIPS if chaining_enabled else None,
     }
 
     job_id = await create_job_record(
@@ -218,12 +223,6 @@ async def project_worker(job_id: str) -> None:
 
         lyrics_text = _format_lyrics_for_music(lyrics_result)
 
-        # 2. Music generation
-        await update_status(
-            job_id, "music_generating", progress=0.5, db_path=settings.DB_PATH,
-        )
-        logger.info("Project worker: generating music for job %s", job_id)
-
         voice_prompt = build_prompt(
             voice_id=params.voice,
             genre=params.genre,
@@ -232,33 +231,85 @@ async def project_worker(job_id: str) -> None:
             reference_description=reference_description,
         )
 
-        generated_path = await music_generate(
-            lyrics=lyrics_text,
-            voice_prompt=voice_prompt,
-            model=model,
-            job_id=job_id,
-        )
+        # Suno chaining guard: if MUSIC_PROVIDER=suno, chaining is irrelevant
+        music_provider = getattr(settings, "MUSIC_PROVIDER", None)
+        is_suno = isinstance(music_provider, str) and music_provider == "suno"
+        chaining_enabled = metadata.get("chaining_enabled", False)
 
-        # 3. Processing (duration extension — skip for previews)
-        if job_type != "preview" and duration_target:
+        if is_suno and chaining_enabled:
+            logger.warning(
+                "Chaining disabled for Suno provider (project_worker job_id=%s)",
+                job_id,
+            )
+            chaining_enabled = False
+
+        # Build reference audio URL for Suno Cover mode
+        reference_audio_url: str | None = None
+        if is_suno and ref_audio.has_reference_audio(metadata.get("project_id", "")):
+            reference_audio_url = ref_audio.get_reference_audio_url(metadata.get("project_id", ""))
+
+        if chaining_enabled:
+            # 2a. Clip-chaining path: split lyrics, generate clips in parallel, stitch
+            await update_status(
+                job_id, "music_generating", progress=0.5, db_path=settings.DB_PATH,
+            )
+            logger.info(
+                "Project worker: generating stitched clips for job %s (chaining_enabled)",
+                job_id,
+            )
+
+            final_path = await generate_stitched(
+                lyrics=lyrics_text,
+                voice_prompt=voice_prompt,
+                model="google/lyria-3-clip-preview",
+                reference_description=reference_description,
+                job_id=job_id,
+            )
+
+            # 3a. Processing step (required by state machine before complete)
             await update_status(
                 job_id, "processing", progress=0.8, db_path=settings.DB_PATH,
             )
-            logger.info(
-                "Project worker: extending duration for job %s (target=%ss)",
-                job_id, duration_target,
-            )
-            ext_result = extend_duration(generated_path, target_seconds=duration_target)
-            final_path = ext_result.path
-            extended = ext_result.extended
-        else:
-            final_path = generated_path
+
+            stitching_used = True
             extended = False
+        else:
+            # 2b. Standard music generation
+            await update_status(
+                job_id, "music_generating", progress=0.5, db_path=settings.DB_PATH,
+            )
+            logger.info("Project worker: generating music for job %s", job_id)
+
+            generated_path = await music_generate(
+                lyrics=lyrics_text,
+                voice_prompt=voice_prompt,
+                model=model,
+                job_id=job_id,
+                reference_audio=reference_audio_url,
+            )
+
+            # 3. Processing (duration extension — skip for previews)
+            if job_type != "preview" and duration_target:
+                await update_status(
+                    job_id, "processing", progress=0.8, db_path=settings.DB_PATH,
+                )
+                logger.info(
+                    "Project worker: extending duration for job %s (target=%ss)",
+                    job_id, duration_target,
+                )
+                ext_result = extend_duration(generated_path, target_seconds=duration_target)
+                final_path = ext_result.path
+                extended = ext_result.extended
+            else:
+                final_path = generated_path
+                extended = False
+            stitching_used = False
 
         # 4. Complete
         completion_meta = {
             **metadata,
             "duration_extended": extended,
+            "stitching_used": stitching_used,
             "lyrics_provider": lyrics_result.provider,
             "title_suggestion": lyrics_result.title_suggestion,
         }

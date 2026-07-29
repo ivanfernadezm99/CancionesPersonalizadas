@@ -396,3 +396,235 @@ class TestProjectWorker:
         finally:
             settings.DB_PATH = original_db
             settings.OUTPUT_DIR = original_output
+
+
+class TestProjectWorkerChaining:
+    """Tests for chaining-enabled project_worker paths."""
+
+    @pytest.mark.asyncio
+    async def test_worker_calls_generate_stitched_when_chaining_enabled(
+        self, tmp_path: Path,
+    ) -> None:
+        from app.config import settings as app_settings
+        app_settings.MUSIC_PROVIDER = "openclaw"
+        """project_worker() should use generate_stitched when chaining_enabled in metadata."""
+        from app.jobs.store import get_connection, init_db
+        from app.projects import project_worker
+        from app.config import settings
+
+        original_db = settings.DB_PATH
+        original_output = settings.OUTPUT_DIR
+        try:
+            settings.DB_PATH = str(tmp_path / "jobs.db")
+            settings.OUTPUT_DIR = str(tmp_path / "output")
+
+            conn = await get_connection(settings.DB_PATH)
+            await init_db(conn)
+            now = "2024-01-01T00:00:00"
+            await conn.execute(
+                """INSERT INTO jobs (job_id, status, params, progress, metadata,
+                                     created_at, updated_at)
+                   VALUES (?, 'queued', ?, 0.0, ?, ?, ?)""",
+                (
+                    "chain-test-job",
+                    json.dumps({
+                        "recipient": "Brenda", "relationship": "pareja",
+                        "occasion": "personalizada", "genre": "bachata",
+                        "mood": "romántico", "voice": "female",
+                    }),
+                    json.dumps({
+                        "project_id": "proj-chain",
+                        "model": "google/lyria-3-clip-preview",
+                        "duration_target": 150,
+                        "reference_song": None,
+                        "job_type": "final",
+                        "chaining_enabled": True,
+                        "num_clips": 6,
+                    }),
+                    now, now,
+                ),
+            )
+            await conn.commit()
+            await conn.close()
+
+            with patch("app.projects.lyrics_generate", new_callable=AsyncMock) as mock_lyrics, \
+                 patch("app.projects.build_prompt", return_value="voice prompt"), \
+                 patch("app.projects.generate_stitched", new_callable=AsyncMock) as mock_stitch, \
+                 patch("app.projects._format_lyrics_for_music", return_value="[Verse 1]\nlyrics"):
+
+                from app.models import LyricsResult
+                mock_lyrics.return_value = LyricsResult(
+                    verses=[{"number": 1, "lines": ["a", "b", "c", "d"]}],
+                    chorus={"lines": ["e", "f", "g", "h"]},
+                    title_suggestion="Canción para Brenda",
+                    provider="test",
+                )
+
+                out_dir = Path(settings.OUTPUT_DIR) / "chain-test-job"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                mock_stitch.return_value = out_dir / "final.mp3"
+                (out_dir / "final.mp3").write_bytes(b"STITCHED MP3 DATA")
+
+                await project_worker("chain-test-job")
+
+                # Should have called generate_stitched (not music_generate)
+                mock_stitch.assert_called_once()
+                stitch_kwargs = mock_stitch.call_args[1]
+                assert stitch_kwargs.get("job_id") == "chain-test-job"
+                assert "voice_prompt" in stitch_kwargs
+
+        finally:
+            settings.DB_PATH = original_db
+            settings.OUTPUT_DIR = original_output
+
+    @pytest.mark.asyncio
+    async def test_worker_music_generate_when_chaining_disabled(
+        self, tmp_path: Path,
+    ) -> None:
+        """project_worker() should use music_generate when chaining_enabled is false."""
+        from app.jobs.store import get_connection, init_db
+        from app.projects import project_worker
+        from app.config import settings
+        from app.music.durext import ExtendResult
+
+        original_db = settings.DB_PATH
+        original_output = settings.OUTPUT_DIR
+        try:
+            settings.DB_PATH = str(tmp_path / "jobs.db")
+            settings.OUTPUT_DIR = str(tmp_path / "output")
+
+            conn = await get_connection(settings.DB_PATH)
+            await init_db(conn)
+            now = "2024-01-01T00:00:00"
+            await conn.execute(
+                """INSERT INTO jobs (job_id, status, params, progress, metadata,
+                                     created_at, updated_at)
+                   VALUES (?, 'queued', ?, 0.0, ?, ?, ?)""",
+                (
+                    "nochain-test-job",
+                    json.dumps({
+                        "recipient": "María", "relationship": "pareja",
+                        "occasion": "personalizada", "genre": "bachata",
+                        "mood": "romántico", "voice": "female",
+                    }),
+                    json.dumps({
+                        "project_id": "proj-nochain",
+                        "model": "google/lyria-3-pro-preview",
+                        "duration_target": 150,
+                        "reference_song": None,
+                        "job_type": "final",
+                        "chaining_enabled": False,
+                    }),
+                    now, now,
+                ),
+            )
+            await conn.commit()
+            await conn.close()
+
+            with patch("app.projects.lyrics_generate", new_callable=AsyncMock) as mock_lyrics, \
+                 patch("app.projects.build_prompt", return_value="voice prompt"), \
+                 patch("app.projects.music_generate", new_callable=AsyncMock) as mock_music, \
+                 patch("app.projects._format_lyrics_for_music", return_value="[Verse 1]\nlyrics"), \
+                 patch("app.projects.extend_duration") as mock_extend:
+
+                from app.models import LyricsResult
+                mock_lyrics.return_value = LyricsResult(
+                    verses=[{"number": 1, "lines": ["a", "b", "c", "d"]}],
+                    chorus={"lines": ["e", "f", "g", "h"]},
+                    title_suggestion="Test",
+                    provider="openai",
+                )
+
+                out_dir = Path(settings.OUTPUT_DIR) / "nochain-test-job"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                (out_dir / "generated.mp3").write_bytes(b"MP3")
+                mock_music.return_value = out_dir / "generated.mp3"
+                mock_extend.return_value = ExtendResult(
+                    path=out_dir / "final.mp3", extended=True,
+                )
+
+                await project_worker("nochain-test-job")
+
+                # Should have called music_generate (not generate_stitched)
+                mock_music.assert_called_once()
+                mock_extend.assert_called_once()
+
+        finally:
+            settings.DB_PATH = original_db
+            settings.OUTPUT_DIR = original_output
+
+    @pytest.mark.asyncio
+    async def test_worker_chaining_sets_stitching_used_metadata(
+        self, tmp_path: Path,
+    ) -> None:
+        from app.jobs.store import get_connection, init_db
+        from app.jobs import get_job
+        from app.projects import project_worker
+        from app.config import settings
+        settings.MUSIC_PROVIDER = "openclaw"
+
+        original_db = settings.DB_PATH
+        original_output = settings.OUTPUT_DIR
+        try:
+            settings.DB_PATH = str(tmp_path / "jobs.db")
+            settings.OUTPUT_DIR = str(tmp_path / "output")
+
+            conn = await get_connection(settings.DB_PATH)
+            await init_db(conn)
+            now = "2024-01-01T00:00:00"
+            await conn.execute(
+                """INSERT INTO jobs (job_id, status, params, progress, metadata,
+                                     created_at, updated_at)
+                   VALUES (?, 'queued', ?, 0.0, ?, ?, ?)""",
+                (
+                    "chain-meta-test",
+                    json.dumps({
+                        "recipient": "Brenda", "relationship": "pareja",
+                        "occasion": "personalizada", "genre": "bachata",
+                        "mood": "romántico", "voice": "female",
+                    }),
+                    json.dumps({
+                        "project_id": "proj-meta",
+                        "model": "google/lyria-3-clip-preview",
+                        "duration_target": 150,
+                        "reference_song": None,
+                        "job_type": "final",
+                        "chaining_enabled": True,
+                        "num_clips": 6,
+                    }),
+                    now, now,
+                ),
+            )
+            await conn.commit()
+            await conn.close()
+
+            with patch("app.projects.lyrics_generate", new_callable=AsyncMock) as mock_lyrics, \
+                 patch("app.projects.build_prompt", return_value="voice prompt"), \
+                 patch("app.projects.generate_stitched", new_callable=AsyncMock) as mock_stitch, \
+                 patch("app.projects._format_lyrics_for_music", return_value="[Verse 1]\nlyrics"):
+
+                from app.models import LyricsResult
+                mock_lyrics.return_value = LyricsResult(
+                    verses=[{"number": 1, "lines": ["a", "b", "c", "d"]}],
+                    chorus={"lines": ["e", "f", "g", "h"]},
+                    title_suggestion="Canción para Brenda",
+                    provider="test",
+                )
+
+                out_dir = Path(settings.OUTPUT_DIR) / "chain-meta-test"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                mock_stitch.return_value = out_dir / "final.mp3"
+                (out_dir / "final.mp3").write_bytes(b"STITCHED")
+
+                await project_worker("chain-meta-test")
+
+                # Verify completion metadata contains stitching_used: true
+                job = await get_job("chain-meta-test", db_path=settings.DB_PATH)
+                assert job is not None
+                meta = json.loads(job.get("metadata") or "{}")
+                assert meta.get("stitching_used") is True
+                assert meta.get("chaining_enabled") is True
+
+        finally:
+            settings.DB_PATH = original_db
+            settings.OUTPUT_DIR = original_output

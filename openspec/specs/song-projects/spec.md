@@ -68,21 +68,15 @@ The system MUST expose `POST /api/projects/{id}/preview` that creates a job with
 
 ### RQ-PRJ-04: Generate Final Song
 
-The system MUST expose `POST /api/projects/{id}/final` that creates a job with model `lyria-3-pro-preview` with duration extension enabled. Returns 202 with `job_id`.
+`POST /api/projects/{id}/final`. OpenClaw: clip-chain when `chaining_enabled`, else pro-preview. Suno: single generate call — chaining irrelevant.
+(Previously: always OpenClaw, no provider branching)
 
-#### Scenario: Final song created
-
-- GIVEN a project with fragments
-- WHEN POST /api/projects/{id}/final
-- THEN response MUST be 202 with a `job_id`
-- AND the job's model param MUST be `lyria-3-pro-preview`
-- AND the job MUST have `duration_extended: true` metadata
-
-#### Scenario: Final without fragments
-
-- GIVEN a project with no fragments
-- WHEN POST /api/projects/{id}/final
-- THEN response MUST be 422
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| OpenClaw chained | `chaining_enabled`, OpenClaw | POST /final | 202 + job_id, clip-chaining |
+| OpenClaw no chain | no chaining, OpenClaw | POST /final | 202 + job_id, pro-preview, no stitch |
+| Suno single call | `music_provider=suno` | POST /final | 202 + job_id, SunoProvider, NO chaining |
+| No fragments | project without fragments | POST /final | 422 |
 
 ### RQ-PRJ-05: Get Project
 

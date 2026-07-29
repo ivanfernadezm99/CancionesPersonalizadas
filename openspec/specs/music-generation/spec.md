@@ -76,7 +76,7 @@ Typical generation time: 30 seconds to 3 minutes.
 
 ### RQ-MUS-03: Duration Extension
 
-The system SHOULD extend generated audio to achieve 2-3 minutes total duration, since Lyria 3 typically produces 30-90 seconds. For pro-preview model outputs (`lyria-3-pro-preview`), the system MUST attempt duration extension (target 120-180s). For clip-preview outputs (`lyria-3-clip-preview`), extension is optional (target 30-45s is sufficient).
+The system SHOULD extend generated audio to achieve 2-3 minutes total duration, since Lyria 3 typically produces 30-90 seconds. For pro-preview model outputs (`lyria-3-pro-preview`), the system MUST attempt duration extension (target 120-180s). For clip-preview outputs (`lyria-3-clip-preview`), extension is optional unless used in clip-chaining mode.
 
 Extension techniques (in priority order):
 1. **Smart loop**: Crossfade-loop the segment for natural-sounding extension
@@ -121,6 +121,20 @@ Extension techniques (in priority order):
 - THEN output MAY be at original length (extension not required)
 - AND `duration_extended` SHOULD remain false
 
+#### Scenario: Stitch technique produces full song
+
+- GIVEN a `chaining_enabled` final job with 6 lyric segments
+- WHEN the system generates 6 clips and stitches them
+- THEN the output MUST be ≥ 150s
+- AND `stitching_used: true` MUST be set in job metadata
+
+#### Scenario: Clip-preview with chaining produces output
+
+- GIVEN a clip-chaining job with 6 clips using `lyria-3-clip-preview`
+- WHEN the clips are generated and stitched
+- THEN the output MUST be valid MP3 at 192k
+- AND the output SHOULD be longer than a single clip-preview output
+
 ### RQ-MUS-04: Output Storage
 
 The system MUST store the final MP3 file at a deterministic path keyed by job ID:
@@ -146,41 +160,45 @@ The output directory MUST be configurable via `OUTPUT_DIR` environment variable 
 
 ### RQ-MUS-05: Model Selection by Job Type
 
-The system MUST select the OpenClaw model based on job type: `lyria-3-clip-preview` for preview jobs (30s clips) and `lyria-3-pro-preview` for final jobs (2+ min songs). Existing `POST /api/generate` jobs MUST continue using `lyria-3-clip-preview` (backward compatible).
+OpenClaw: `lyria-3-clip-preview` for previews, clip-chaining or pro-preview for finals. Suno: uses V4/V4_5/V4_5ALL/V5 — no clip-chaining.
+(Previously: unconditional OpenClaw model selection)
 
-#### Scenario: Preview uses clip model
-
-- GIVEN a preview job triggered from POST /api/projects/{id}/preview
-- WHEN the music_generate tool is invoked
-- THEN the `model` arg MUST be `google/lyria-3-clip-preview`
-
-#### Scenario: Final uses pro model
-
-- GIVEN a final job triggered from POST /api/projects/{id}/final
-- WHEN the music_generate tool is invoked
-- THEN the `model` arg MUST be `google/lyria-3-pro-preview`
-
-#### Scenario: Existing generate still uses clip
-
-- GIVEN a job from POST /api/generate (not project-backed)
-- WHEN music_generate is invoked
-- THEN the `model` arg MUST be `google/lyria-3-clip-preview`
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| OpenClaw preview | preview job, OpenClaw | music_generate invoked | model=`lyria-3-clip-preview` |
+| OpenClaw final chained | final, `chaining_enabled`, OpenClaw | generation starts | clip-chain, NOT pro-preview |
+| OpenClaw final fallback | final, no chaining, OpenClaw | starts | use `lyria-3-pro-preview` |
+| OpenClaw existing gen | POST /api/generate, OpenClaw | invoked | model=`lyria-3-clip-preview` |
 
 ### RQ-MUS-06: Reference Song in Prompt
 
-When a project has `reference_song` set, the system MUST include it in the prompt sent to OpenClaw, e.g. "al estilo de {reference_song}".
+OpenClaw: include ref as "al estilo de {song}". Suno: handled via Cover mode (RQ-SUNO-02).
+(Previously: always appended unconditionally)
 
-#### Scenario: Reference song appended to prompt
+| Scenario | GIVEN | WHEN | THEN |
+|----------|-------|------|------|
+| OpenClaw with ref | `reference_song` set, OpenClaw | prompt built | include "al estilo de {song}" |
+| OpenClaw no ref | no `reference_song`, OpenClaw | prompt built | no style reference added |
 
-- GIVEN a project with reference_song="Bachata Rosa - Juan Luis Guerra"
-- WHEN the music_generate prompt is constructed
-- THEN the prompt MUST include "al estilo de Bachata Rosa - Juan Luis Guerra"
+### RQ-MUS-07: Provider Abstraction
 
-#### Scenario: No reference song
+Implement `BaseMusicProvider(ABC)` with `async generate(lyrics, voice_prompt, *, reference_audio=None) -> Path`.
 
-- GIVEN a project or request without reference_song
-- WHEN the prompt is constructed
-- THEN the prompt MUST NOT include any style reference
+- GIVEN BaseMusicProvider subclass WHEN instantiated THEN MUST implement `generate()`
+- GIVEN subclass without `generate()` WHEN instantiated THEN TypeError raised
+
+### RQ-MUS-08: Config-Level Selection
+
+`MUSIC_PROVIDER` env var (`openclaw`|`suno`, default `openclaw`). `app/music/__init__.py` delegates to configured provider. `openclaw` = pre-change behavior.
+
+- GIVEN `MUSIC_PROVIDER=openclaw` WHEN `generate()` called THEN behavior matches pre-abstraction
+- GIVEN invalid provider WHEN Settings init THEN config error raised
+
+### RQ-MUS-09: OpenClawProvider Wrapper
+
+Wraps `OpenClawClient` without modifying it. Behavior identical to pre-abstraction.
+
+- GIVEN `OpenClawProvider` WHEN `generate()` called THEN client methods called with same params AND Path matches pre-abstraction
 
 ## Edge Cases
 

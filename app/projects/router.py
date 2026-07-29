@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 
 from app.audio_analysis import analyze_audio
 from app.models import (
@@ -24,7 +25,7 @@ from app.models import (
 )
 from app.projects import create_final_job, create_preview_job
 from app.projects import create_project as orch_create_project
-from app.projects import store
+from app.projects import ref_audio, store
 
 router = APIRouter(prefix="/api/projects")
 
@@ -179,8 +180,8 @@ async def upload_reference_audio(
     (transcription + language detection) and pydub (duration, energy,
     tempo) to generate a style description used by Lyria 3.
 
-    The description is stored on the project and used in subsequent
-    preview/final generations.
+    When MUSIC_PROVIDER=suno, the file is persisted for Suno Cover mode
+    and a public reference_audio_url is returned.
     """
     from app.config import settings
 
@@ -204,6 +205,10 @@ async def upload_reference_audio(
         shutil.copyfileobj(file.file, tmp)
         tmp_path = Path(tmp.name)
 
+    # Determine if we need to keep the file for Suno Cover mode
+    music_provider = getattr(settings, "MUSIC_PROVIDER", "openclaw")
+    is_suno = isinstance(music_provider, str) and music_provider == "suno"
+
     try:
         # Analyze
         result = analyze_audio(tmp_path)
@@ -221,6 +226,13 @@ async def upload_reference_audio(
             db_path=settings.DB_PATH,
         )
 
+        ref_audio_url: str | None = None
+
+        # Keep reference audio file for Suno Cover mode
+        if is_suno:
+            ref_audio.store_reference_audio(project_id, tmp_path)
+            ref_audio_url = ref_audio.get_reference_audio_url(project_id)
+
         return AudioReferenceResponse(
             project_id=project_id,
             language=result.language,
@@ -229,6 +241,26 @@ async def upload_reference_audio(
             energy=result.energy,
             estimated_tempo=result.estimated_tempo,
             style_description=result.style_description,
+            reference_audio_url=ref_audio_url,
         )
     finally:
         tmp_path.unlink(missing_ok=True)
+
+
+@router.get("/ref-audio/{project_id}")
+async def serve_reference_audio(project_id: str) -> FileResponse:
+    """Serve a stored reference audio file for Suno Cover mode.
+
+    Returns the MP3 file if it exists, otherwise 404.
+    """
+    ref_path = ref_audio.get_reference_audio_path(project_id)
+    if ref_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "ref_audio_not_found", "project_id": project_id},
+        )
+    return FileResponse(
+        path=str(ref_path),
+        media_type="audio/mpeg",
+        filename="reference.mp3",
+    )

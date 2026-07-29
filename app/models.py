@@ -101,6 +101,7 @@ class SongProjectCreate(BaseModel):
     reference_description: str | None = Field(
         None, max_length=1000, description="Auto-generated style description from uploaded audio reference"
     )
+    chaining_enabled: bool = Field(default=False, description="Use clip chaining for the final song instead of pro-preview")
 
 
 class StoryFragmentAdd(BaseModel):
@@ -117,6 +118,7 @@ class SongProjectUpdate(BaseModel):
     voice: str | None = Field(None, min_length=1, max_length=50)
     reference_song: str | None = Field(None, max_length=200)
     reference_description: str | None = Field(None, max_length=1000)
+    chaining_enabled: bool | None = Field(None, description="Enable clip chaining for final song generation")
     fragment: StoryFragmentAdd | None = None
 
 
@@ -166,3 +168,4 @@ class AudioReferenceResponse(BaseModel):
     energy: str = "media"
     estimated_tempo: str = "medio"
     style_description: str = ""
+    reference_audio_url: str | None = None

@@ -42,6 +42,24 @@ class Settings(BaseSettings):
     PREVIEW_TARGET_SECONDS: int = 30
     FINAL_TARGET_SECONDS: int = 150
 
+    # Music provider selection
+    MUSIC_PROVIDER: str = "openclaw"
+
+    # Suno AI settings
+    SUNO_API_KEY: str = ""
+    SUNO_BASE_URL: str = ""
+    SUNO_DEFAULT_MODEL: str = "V4_5"
+
+    # Public URL for serving reference audio
+    PUBLIC_BASE_URL: str = ""
+
+    # Clip chaining settings
+    CLIP_DURATION: int = 30
+    CLIP_CROSSFADE_MS: int = 2500
+    MAX_CLIPS: int = 6
+    MAX_PARALLEL: int = 3
+    CLIP_RETRY_ATTEMPTS: int = 2
+
     @field_validator("OPENCLAW_BASE_URL")
     @classmethod
     def strip_trailing_slash(cls, v: str) -> str:
