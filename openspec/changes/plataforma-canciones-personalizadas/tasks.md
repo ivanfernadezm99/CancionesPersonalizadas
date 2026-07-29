@@ -70,11 +70,11 @@ Stacked PRs per repo: POSBackend 1 PR, CP 3 stacked PRs, Angular 1 PR.
 - [x] 5.7 `CheckoutComponent` — MP button + polling 3s/5min timeout (RQ-ANG-06)
 - [x] 5.8 `DownloadComponent` — full song download/stream (RQ-ANG-02)
 - [x] 5.9 Configure CP API base URL + CORS if needed (gate item 3)
-- [ ] 5.10 Tests: component render, service calls, polling, navigation
+- [x] 5.10 Tests: component render, service calls, polling, navigation
 
 ## Phase 6: Integration + Verification
 
-- [ ] 6.1 Full-flow integration: create → fragments → preview → checkout → webhook → final → stream
-- [ ] 6.2 Docker build + compose up + health endpoint verification
-- [ ] 6.3 Cross-repo contract checks: JWKS format, webhook secret, checkout response shape
-- [ ] 6.4 Update verification doc per spec scenarios
+- [x] 6.1 Full-flow integration: create → fragments → preview → checkout → webhook → final → stream
+- [x] 6.2 Docker build + compose up + health endpoint verification
+- [x] 6.3 Cross-repo contract checks: JWKS format, webhook secret, checkout response shape
+- [x] 6.4 Update verification doc per spec scenarios
