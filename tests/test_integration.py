@@ -321,10 +321,47 @@ class TestStreamEndpoint:
         finally:
             await conn.close()
 
+        # Create a paid project and link the job to it
+        await self._link_job_to_paid_project(test_db_path, job_id)
+
         # Copy MP3 to output directory
         out_dir = Path(test_output_dir) / job_id
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "final.mp3").write_bytes(sample_mp3.read_bytes())
+
+    async def _link_job_to_paid_project(
+        self,
+        test_db_path: str,
+        job_id: str,
+    ) -> None:
+        """Create a minimal paid project and link the job to it."""
+        import aiosqlite
+        from datetime import datetime, timezone
+
+        from app.projects.store import init_schema
+
+        conn = await aiosqlite.connect(test_db_path)
+        conn.row_factory = aiosqlite.Row
+        try:
+            await conn.execute("PRAGMA journal_mode=WAL")
+            await init_schema(test_db_path, conn=conn)
+            now = datetime.now(timezone.utc).isoformat()
+            project_id = f"proj-{job_id}"
+            await conn.execute(
+                """INSERT OR IGNORE INTO projects
+                   (id, recipient, relationship, genre, mood, voice,
+                    status, paid_at, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'paid', ?, ?, ?)""",
+                (project_id, "Test", "test", "pop", "happy", "female", now, now, now),
+            )
+            await conn.execute(
+                """INSERT OR IGNORE INTO project_jobs (project_id, job_id, job_type, created_at)
+                   VALUES (?, ?, 'final', ?)""",
+                (project_id, job_id, now),
+            )
+            await conn.commit()
+        finally:
+            await conn.close()
 
     async def _create_job_with_status(
         self,
@@ -376,7 +413,8 @@ class TestStreamEndpoint:
         assert response.status_code == 200
         assert response.headers.get("content-type") == "audio/mpeg"
         assert response.headers.get("X-Job-Status") == "complete"
-        assert response.headers.get("X-Freemium-Preview") == "true"
+        assert response.headers.get("X-Paid-Content") == "true"
+        assert response.headers.get("X-Freemium-Preview") is None
         assert response.headers.get("accept-ranges") == "bytes"
 
     @pytest.mark.asyncio

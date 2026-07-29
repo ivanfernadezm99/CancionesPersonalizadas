@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS projects (
     reference_description TEXT,
     chaining_enabled INTEGER NOT NULL DEFAULT 0,
     status          TEXT NOT NULL DEFAULT 'draft'
-                    CHECK(status IN ('draft', 'complete')),
+                    CHECK(status IN ('draft','preview_ready','payment_pending','paid','completed')),
+    paid_at         TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
@@ -71,6 +72,58 @@ async def _get_conn(db_path: str) -> aiosqlite.Connection:
     return conn
 
 
+async def _migrate_project_status(conn: aiosqlite.Connection) -> None:
+    """Add paid_at column and expand status CHECK constraint to include new states."""
+    # Add paid_at column (idempotent)
+    try:
+        await conn.execute("ALTER TABLE projects ADD COLUMN paid_at TEXT")
+    except aiosqlite.OperationalError:
+        pass
+
+    # Detect old CHECK constraint by examining the table's SQL
+    cursor = await conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='projects'",
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return
+    sql: str = row[0]
+
+    # If the old CHECK constraint is present, recreate the table
+    if "CHECK(status IN ('draft', 'complete'))" in sql:
+        cursor = await conn.execute("PRAGMA table_info(projects)")
+        columns = await cursor.fetchall()
+        col_names = [col[1] for col in columns]
+        cols = ", ".join(col_names)
+
+        await conn.executescript(f"""
+            CREATE TABLE projects_new (
+                id              TEXT PRIMARY KEY,
+                recipient       TEXT NOT NULL,
+                relationship    TEXT NOT NULL,
+                genre           TEXT NOT NULL DEFAULT 'balada romántica',
+                mood            TEXT NOT NULL DEFAULT 'romántico',
+                voice           TEXT NOT NULL DEFAULT 'male',
+                reference_song  TEXT,
+                reference_description TEXT,
+                chaining_enabled INTEGER NOT NULL DEFAULT 0,
+                status          TEXT NOT NULL DEFAULT 'draft'
+                                CHECK(status IN ('draft','preview_ready','payment_pending','paid','completed')),
+                paid_at         TEXT,
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL
+            );
+
+            INSERT INTO projects_new ({cols})
+            SELECT {cols} FROM projects;
+
+            UPDATE projects_new SET status = 'completed' WHERE status = 'complete';
+
+            DROP TABLE projects;
+            ALTER TABLE projects_new RENAME TO projects;
+        """)
+
+
 async def init_schema(db_path: str, conn: aiosqlite.Connection | None = None) -> None:
     if conn is not None:
         await conn.executescript(SCHEMA_SQL)
@@ -87,6 +140,7 @@ async def init_schema(db_path: str, conn: aiosqlite.Connection | None = None) ->
             )
         except aiosqlite.OperationalError:
             pass
+        await _migrate_project_status(conn)
         await conn.commit()
         return
     conn = await _get_conn(db_path)
@@ -104,6 +158,7 @@ async def init_schema(db_path: str, conn: aiosqlite.Connection | None = None) ->
             )
         except aiosqlite.OperationalError:
             pass
+        await _migrate_project_status(conn)
         await conn.commit()
     finally:
         await conn.close()
@@ -235,6 +290,37 @@ async def link_project_job(
             (project_id, job_id, job_type, now),
         )
         await conn.commit()
+    finally:
+        await conn.close()
+
+
+async def update_project_status(
+    project_id: str,
+    status: str,
+    *,
+    paid_at: str | None = None,
+    db_path: str,
+) -> bool:
+    """Update a project's status and optionally set paid_at. Returns True if found."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = await _get_conn(db_path)
+    try:
+        await init_schema(db_path, conn=conn)
+        cursor = await conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,))
+        if await cursor.fetchone() is None:
+            return False
+
+        await conn.execute(
+            "UPDATE projects SET status = ?, updated_at = ? WHERE id = ?",
+            (status, now, project_id),
+        )
+        if paid_at is not None:
+            await conn.execute(
+                "UPDATE projects SET paid_at = ? WHERE id = ?",
+                (paid_at, project_id),
+            )
+        await conn.commit()
+        return True
     finally:
         await conn.close()
 

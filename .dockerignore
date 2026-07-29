@@ -1,0 +1,16 @@
+__pycache__/
+.git/
+.env
+.env.*
+output/
+*.db
+*.sqlite
+*.sqlite3
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+.env.docker

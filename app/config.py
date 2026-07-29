@@ -60,6 +60,19 @@ class Settings(BaseSettings):
     MAX_PARALLEL: int = 3
     CLIP_RETRY_ATTEMPTS: int = 2
 
+    # JWT Authentication
+    JWT_JWKS_URL: str = ""
+    JWT_ISSUER: str = "pos-backend"
+    JWT_AUDIENCE: str = "canciones-personalizadas"
+    JWT_ALGORITHM: str = "RS256"
+    JWT_AUTH_ENFORCED: bool = False
+    JWT_ALLOWED_ROLES: list[int] = [1, 2, 3, 4, 5]
+
+    # Payment settings
+    SONG_PRICE: float = 5.00
+    PAYMENT_GATEWAY_URL: str = ""
+    PAYMENT_WEBHOOK_SECRET: str = ""
+
     @field_validator("OPENCLAW_BASE_URL")
     @classmethod
     def strip_trailing_slash(cls, v: str) -> str:

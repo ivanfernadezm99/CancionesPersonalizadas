@@ -215,13 +215,41 @@ class TestStreamEndpoint:
             out_dir.mkdir(parents=True, exist_ok=True)
             (out_dir / "final.mp3").write_bytes(b"MP3 audio data here")
 
+            # Create paid project and link job
+            import aiosqlite
+            from datetime import datetime, timezone
+            from app.projects.store import init_schema
+
+            conn = await aiosqlite.connect(settings.DB_PATH)
+            conn.row_factory = aiosqlite.Row
+            try:
+                await conn.execute("PRAGMA journal_mode=WAL")
+                await init_schema(settings.DB_PATH, conn=conn)
+                now = datetime.now(timezone.utc).isoformat()
+                project_id = f"proj-{job_id}"
+                await conn.execute(
+                    """INSERT OR IGNORE INTO projects
+                       (id, recipient, relationship, genre, mood, voice,
+                        status, paid_at, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, 'paid', ?, ?, ?)""",
+                    (project_id, "Test", "test", "pop", "happy", "female", now, now, now),
+                )
+                await conn.execute(
+                    """INSERT OR IGNORE INTO project_jobs (project_id, job_id, job_type, created_at)
+                       VALUES (?, ?, 'final', ?)""",
+                    (project_id, job_id, now),
+                )
+                await conn.commit()
+            finally:
+                await conn.close()
+
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 response = await client.get(f"/api/stream/{job_id}")
 
                 assert response.status_code == 200
                 assert response.headers.get("content-type") == "audio/mpeg"
-                assert response.headers.get("X-Freemium-Preview") == "true"
+                assert response.headers.get("X-Paid-Content") == "true"
         finally:
             settings.DB_PATH = original_db
             settings.OUTPUT_DIR = original_output

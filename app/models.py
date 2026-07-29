@@ -169,3 +169,31 @@ class AudioReferenceResponse(BaseModel):
     estimated_tempo: str = "medio"
     style_description: str = ""
     reference_audio_url: str | None = None
+
+
+# ── Payment Models ─────────────────────────────────────────────────────────────
+
+
+class CheckoutResponse(BaseModel):
+    """Response for creating a checkout preference."""
+
+    preference_id: str = Field(..., description="Mercado Pago preference ID")
+    init_point: str = Field(..., description="Mercado Pago checkout URL")
+    project_id: str = Field(..., description="Project ID")
+    amount: float = Field(..., ge=0, description="Amount charged")
+
+
+class PaymentConfirmRequest(BaseModel):
+    """Request body for payment confirmation webhook."""
+
+    project_id: str = Field(..., description="Project being paid for")
+    payment_id: str = Field(..., description="Payment transaction ID")
+    status: str = Field(..., description="Payment status (approved/rejected/etc)")
+    metadata: dict[str, str] | None = Field(None, description="Optional metadata from gateway")
+
+
+class WebhookResponse(BaseModel):
+    """Response for webhook calls."""
+
+    success: bool = Field(..., description="Whether the webhook was processed")
+    message: str = Field(..., description="Status message")

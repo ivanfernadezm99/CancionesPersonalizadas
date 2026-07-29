@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import aiosqlite
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -65,6 +66,40 @@ async def _create_job_row(
         await conn.close()
 
 
+async def _create_paid_project_and_link(
+    db_path: str,
+    job_id: str,
+) -> None:
+    """Create a minimal paid project and link the job to it."""
+    from app.projects.store import init_schema
+    from datetime import datetime, timezone
+
+    conn = await aiosqlite.connect(db_path)
+    conn.row_factory = aiosqlite.Row
+    try:
+        await conn.execute("PRAGMA journal_mode=WAL")
+        await init_schema(db_path, conn=conn)
+
+        now = datetime.now(timezone.utc).isoformat()
+        project_id = f"proj-{job_id}"
+
+        await conn.execute(
+            """INSERT OR IGNORE INTO projects
+               (id, recipient, relationship, genre, mood, voice,
+                status, paid_at, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'paid', ?, ?, ?)""",
+            (project_id, "Test", "test", "pop", "happy", "female", now, now, now),
+        )
+        await conn.execute(
+            """INSERT OR IGNORE INTO project_jobs (project_id, job_id, job_type, created_at)
+               VALUES (?, ?, 'final', ?)""",
+            (project_id, job_id, now),
+        )
+        await conn.commit()
+    finally:
+        await conn.close()
+
+
 async def _create_mp3(output_dir: str, job_id: str, size_kb: int = 100) -> Path:
     """Create a mock MP3 file for the job_id."""
     out_dir = Path(output_dir) / job_id
@@ -91,6 +126,7 @@ class TestStreamRouter:
             settings.OUTPUT_DIR = str(tmp_path / "output")
 
             await _create_job_row(settings.DB_PATH, "job-complete", status="complete")
+            await _create_paid_project_and_link(settings.DB_PATH, "job-complete")
             await _create_mp3(settings.OUTPUT_DIR, "job-complete")
 
             response = await client.get("/api/stream/job-complete")
@@ -98,7 +134,8 @@ class TestStreamRouter:
             assert response.status_code == 200
             assert response.headers.get("content-type") == "audio/mpeg"
             assert response.headers.get("X-Job-Status") == "complete"
-            assert response.headers.get("X-Freemium-Preview") == "true"
+            assert response.headers.get("X-Paid-Content") == "true"
+            assert response.headers.get("X-Freemium-Preview") is None
             assert response.headers.get("accept-ranges") == "bytes"
         finally:
             settings.DB_PATH = original_db
@@ -184,6 +221,7 @@ class TestStreamRouter:
             settings.OUTPUT_DIR = str(tmp_path / "output")
 
             await _create_job_row(settings.DB_PATH, "job-range", status="complete")
+            await _create_paid_project_and_link(settings.DB_PATH, "job-range")
             file_path = await _create_mp3(settings.OUTPUT_DIR, "job-range", size_kb=500)
 
             file_size = file_path.stat().st_size
@@ -194,6 +232,7 @@ class TestStreamRouter:
 
             assert response.status_code == 206
             assert response.headers.get("content-type") == "audio/mpeg"
+            assert response.headers.get("X-Paid-Content") == "true"
             assert f"bytes 0-1023/{file_size}" in response.headers.get("content-range", "")
             assert len(response.content) == 1024
         finally:
@@ -214,6 +253,7 @@ class TestStreamRouter:
             settings.OUTPUT_DIR = str(tmp_path / "output")
 
             await _create_job_row(settings.DB_PATH, "job-open", status="complete")
+            await _create_paid_project_and_link(settings.DB_PATH, "job-open")
             file_path = await _create_mp3(settings.OUTPUT_DIR, "job-open", size_kb=100)
 
             file_size = file_path.stat().st_size
@@ -223,6 +263,7 @@ class TestStreamRouter:
             )
 
             assert response.status_code == 206
+            assert response.headers.get("X-Paid-Content") == "true"
             assert f"1000-{file_size - 1}/{file_size}" in response.headers.get("content-range", "")
         finally:
             settings.DB_PATH = original_db
@@ -242,6 +283,7 @@ class TestStreamRouter:
             settings.OUTPUT_DIR = str(tmp_path / "output")
 
             await _create_job_row(settings.DB_PATH, "job-416", status="complete")
+            await _create_paid_project_and_link(settings.DB_PATH, "job-416")
             file_path = await _create_mp3(settings.OUTPUT_DIR, "job-416", size_kb=10)
 
             file_size = file_path.stat().st_size
@@ -270,6 +312,7 @@ class TestStreamRouter:
             settings.OUTPUT_DIR = str(tmp_path / "output")
 
             await _create_job_row(settings.DB_PATH, "job-nofile", status="complete")
+            await _create_paid_project_and_link(settings.DB_PATH, "job-nofile")
             # Don't create MP3 file
 
             response = await client.get("/api/stream/job-nofile")

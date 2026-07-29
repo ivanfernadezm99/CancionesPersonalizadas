@@ -15,6 +15,8 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from app.auth.middleware import JWTAuthMiddleware
+from app.auth.router import router as auth_router
 from app.config import settings
 from app.jobs import create_job, get_job
 from app.jobs.cleanup import start_cleanup_scheduler
@@ -110,6 +112,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# JWT authentication middleware — protects /api/* routes
+app.add_middleware(JWTAuthMiddleware)
 
 # ── Error Handlers ───────────────────────────────────────────────────────────
 
@@ -222,7 +227,10 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
 
 # ── Register Routers ─────────────────────────────────────────────────────────
 
+from app.projects.payment import webhook_router
 from app.projects.router import router as projects_router
 
+app.include_router(auth_router)
 app.include_router(stream_router)
 app.include_router(projects_router)
+app.include_router(webhook_router)

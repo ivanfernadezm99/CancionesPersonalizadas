@@ -410,7 +410,7 @@ class TestFinalEndpoint:
     async def test_final_returns_202(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """POST /api/projects/{id}/final should return 202 with job_id."""
+        """POST /api/projects/{id}/final should return 202 with job_id when paid."""
         from app.config import settings
 
         monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
@@ -418,6 +418,8 @@ class TestFinalEndpoint:
         monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
         monkeypatch.setattr(settings, "OPENCLAW_TOKEN", "test-token")
         monkeypatch.setattr(settings, "MAX_CONCURRENT_JOBS", 5)
+        monkeypatch.setattr(settings, "PAYMENT_WEBHOOK_SECRET", "test-webhook-secret")
+        monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", False)
         monkeypatch.setattr("app.main._active_requests", 0)
 
         from app.main import app
@@ -441,6 +443,17 @@ class TestFinalEndpoint:
                 json={"fragment": {"text": "Una historia de amor"}},
             )
 
+            # Mark as paid via webhook
+            await client.post(
+                "/api/webhooks/payment-confirmed",
+                json={
+                    "project_id": project_id,
+                    "payment_id": "mp-test-001",
+                    "status": "approved",
+                },
+                headers={"X-Webhook-Secret": "test-webhook-secret"},
+            )
+
             with patch("app.projects.project_worker", new_callable=AsyncMock):
                 final_resp = await client.post(
                     f"/api/projects/{project_id}/final",
@@ -459,7 +472,7 @@ class TestIntegration:
     async def test_full_project_flow(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Create project → add fragments → preview → check status."""
+        """Create project → add fragments → preview → pay → final."""
         from app.config import settings
 
         monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
@@ -467,6 +480,8 @@ class TestIntegration:
         monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
         monkeypatch.setattr(settings, "OPENCLAW_TOKEN", "test-token")
         monkeypatch.setattr(settings, "MAX_CONCURRENT_JOBS", 5)
+        monkeypatch.setattr(settings, "PAYMENT_WEBHOOK_SECRET", "test-webhook-secret")
+        monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", False)
         monkeypatch.setattr("app.main._active_requests", 0)
 
         from app.main import app
@@ -508,14 +523,26 @@ class TestIntegration:
                 )
             assert preview_resp.status_code == 202
 
-            # 5. Final
+            # 5. Pay via webhook
+            pay_resp = await client.post(
+                "/api/webhooks/payment-confirmed",
+                json={
+                    "project_id": project_id,
+                    "payment_id": "mp-int-001",
+                    "status": "approved",
+                },
+                headers={"X-Webhook-Secret": "test-webhook-secret"},
+            )
+            assert pay_resp.status_code == 200
+
+            # 6. Final
             with patch("app.projects.project_worker", new_callable=AsyncMock):
                 final_resp = await client.post(
                     f"/api/projects/{project_id}/final",
                 )
             assert final_resp.status_code == 202
 
-            # 6. Get project should show previews
+            # 7. Get project should show previews (2: one preview + one final)
             get_after = await client.get(f"/api/projects/{project_id}")
             assert get_after.status_code == 200
             assert len(get_after.json()["previews"]) == 2

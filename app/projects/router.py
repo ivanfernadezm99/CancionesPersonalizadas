@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse
 from app.audio_analysis import analyze_audio
 from app.models import (
     AudioReferenceResponse,
+    CheckoutResponse,
     JobCreateResponse,
     SongProjectCreate,
     SongProjectResponse,
@@ -26,6 +27,7 @@ from app.models import (
 from app.projects import create_final_job, create_preview_job
 from app.projects import create_project as orch_create_project
 from app.projects import ref_audio, store
+from app.projects.payment import create_checkout, webhook_router
 
 router = APIRouter(prefix="/api/projects")
 
@@ -148,8 +150,29 @@ async def create_final(project_id: str) -> JobCreateResponse:
     """Generate the final song from accumulated story fragments.
 
     Uses lyria-3-pro-preview model with 150s target duration.
-    Requires at least one story fragment.
+    Requires at least one story fragment and a 'paid' project status.
+    Returns 402 Payment Required if the project has not been paid.
     """
+    from app.config import settings as app_settings
+
+    project = await store.get_project(project_id, db_path=app_settings.DB_PATH)
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "project_not_found", "project_id": project_id},
+        )
+
+    if project["status"] != "paid":
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "error": "payment_required",
+                "message": "Project must be paid before generating the final song",
+                "project_id": project_id,
+                "current_status": project["status"],
+            },
+        )
+
     try:
         return await create_final_job(project_id)
     except ValueError as exc:
@@ -245,6 +268,15 @@ async def upload_reference_audio(
         )
     finally:
         tmp_path.unlink(missing_ok=True)
+
+
+# Register the checkout route on the projects router (under /api/projects/{id}/checkout)
+router.add_api_route(
+    "/{project_id}/checkout",
+    create_checkout,
+    methods=["POST"],
+    response_model=CheckoutResponse,
+)
 
 
 @router.get("/ref-audio/{project_id}")

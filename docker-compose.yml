@@ -1,0 +1,18 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.docker
+    volumes:
+      - ./output:/app/output
+      - ./jobs.db:/app/data/jobs.db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/auth/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
