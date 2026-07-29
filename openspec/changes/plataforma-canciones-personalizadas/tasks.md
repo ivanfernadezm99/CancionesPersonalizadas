@@ -22,12 +22,12 @@ Stacked PRs per repo: POSBackend 1 PR, CP 3 stacked PRs, Angular 1 PR.
 
 ## Phase 1: POSBackend Payment Enablement
 
-- [ ] 1.1 `Program.cs` — Uncomment `IMercadoPagoService` DI registration (RQ-PAY-01)
-- [ ] 1.2 Create `IPaymentGatewayResolver` + factory pattern impl (RQ-PAY-02)
-- [ ] 1.3 Implement `PaymentGatewayApplication.TestGatewayConnectionAsync()` (RQ-PAY-03)
-- [ ] 1.4 Implement `PaymentWebhookController.ProcessWebhookAsync()` with idempotency (RQ-PAY-04)
-- [ ] 1.5 Connect `SubscriptionApplication` to resolver for recurring billing (RQ-PAY-05)
-- [ ] 1.6 Tests: DI resolves, resolver returns correct gateway, webhook approve/reject/idempotent
+- [x] 1.1 `Program.cs` — Uncomment `IMercadoPagoService` DI registration (RQ-PAY-01)
+- [x] 1.2 Create `IPaymentGatewayResolver` + factory pattern impl (RQ-PAY-02)
+- [x] 1.3 Implement `PaymentGatewayApplication.TestGatewayConnectionAsync()` (RQ-PAY-03)
+- [x] 1.4 Implement `PaymentWebhookController.ProcessWebhookAsync()` with idempotency (RQ-PAY-04)
+- [x] 1.5 Connect `SubscriptionApplication` to resolver for recurring billing (RQ-PAY-05)
+- [x] 1.6 Tests: DI resolves, resolver returns correct gateway, webhook approve/reject/idempotent
 
 ## Phase 2: CP Docker + Auth Foundation
 
@@ -61,15 +61,15 @@ Stacked PRs per repo: POSBackend 1 PR, CP 3 stacked PRs, Angular 1 PR.
 
 ## Phase 5: Angular Frontend Module (POSCuentasCorrientes)
 
-- [ ] 5.1 Generate `CancionesPersonalizadasModule` + lazy routes (RQ-ANG-01)
-- [ ] 5.2 `CancionesService` — HTTP to CP API with JWT interceptor (RQ-ANG-03)
-- [ ] 5.3 `PaymentService` — checkout via POSBackend (RQ-ANG-03)
-- [ ] 5.4 `LandingComponent` — welcome + CTA (RQ-ANG-02)
-- [ ] 5.5 `CreateProjectComponent` — form: recipient, genre, mood, voice, fragments (RQ-ANG-02)
-- [ ] 5.6 `PreviewComponent` — 30s player + accept/retry (RQ-ANG-02)
-- [ ] 5.7 `CheckoutComponent` — MP button + polling 3s/5min timeout (RQ-ANG-06)
-- [ ] 5.8 `DownloadComponent` — full song download/stream (RQ-ANG-02)
-- [ ] 5.9 Configure CP API base URL + CORS if needed (gate item 3)
+- [x] 5.1 Generate `CancionesPersonalizadasModule` + lazy routes (RQ-ANG-01)
+- [x] 5.2 `CancionesService` — HTTP to CP API with JWT interceptor (RQ-ANG-03)
+- [x] 5.3 `PaymentService` — checkout via POSBackend (RQ-ANG-03)
+- [x] 5.4 `LandingComponent` — welcome + CTA (RQ-ANG-02)
+- [x] 5.5 `CreateProjectComponent` — form: recipient, genre, mood, voice, fragments (RQ-ANG-02)
+- [x] 5.6 `PreviewComponent` — 30s player + accept/retry (RQ-ANG-02)
+- [x] 5.7 `CheckoutComponent` — MP button + polling 3s/5min timeout (RQ-ANG-06)
+- [x] 5.8 `DownloadComponent` — full song download/stream (RQ-ANG-02)
+- [x] 5.9 Configure CP API base URL + CORS if needed (gate item 3)
 - [ ] 5.10 Tests: component render, service calls, polling, navigation
 
 ## Phase 6: Integration + Verification
