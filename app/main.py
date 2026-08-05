@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -115,6 +116,21 @@ app = FastAPI(
 
 # JWT authentication middleware — protects /api/* routes
 app.add_middleware(JWTAuthMiddleware)
+
+# CORS — allow the Angular frontend to call the API from the browser
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:4200",
+        "http://localhost:4201",
+        "http://localhost:8001",
+        "https://poscuentascorrientes-stage.up.railway.app",
+        "https://www.enlaceschaco.ar",
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ── Error Handlers ───────────────────────────────────────────────────────────
 

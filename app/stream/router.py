@@ -54,7 +54,7 @@ def _build_stream_response(
 
     Supports HTTP Range requests when range_header is provided.
     When content_limit is set, only that many bytes are served and
-    Content-Range reflects the actual file size as the total.
+    Content-Range reflects the effective (capped) size as the total.
     """
     actual_file_size = file_path.stat().st_size
     effective_size = (
@@ -68,7 +68,7 @@ def _build_stream_response(
             end = int(end_str) if end_str else effective_size - 1
 
             if start > end or start >= effective_size:
-                headers["Content-Range"] = f"bytes */{actual_file_size}"
+                headers["Content-Range"] = f"bytes */{effective_size}"
                 return Response(status_code=status.HTTP_416_RANGE_NOT_SATISFIABLE, headers=headers)
 
             if not end_str:  # open-ended range
@@ -77,7 +77,7 @@ def _build_stream_response(
             end = min(end, effective_size - 1)
             response_length = end - start + 1
 
-            headers["Content-Range"] = f"bytes {start}-{end}/{actual_file_size}"
+            headers["Content-Range"] = f"bytes {start}-{end}/{effective_size}"
             headers["Content-Length"] = str(response_length)
             return StreamingResponse(
                 _range_generator_internal(file_path, start, response_length),

@@ -255,6 +255,11 @@ class TestStreamGating:
             file_path = await _create_mp3(settings.OUTPUT_DIR, "job-prange", size_kb=500)
 
             file_size = file_path.stat().st_size
+            # Preview effective size is capped at PREVIEW_TARGET_SECONDS * 16384 = 491520,
+            # NOT the full on-disk size (512000 bytes for a 500KB file).
+            effective_size = 491520
+            assert file_size > effective_size
+
             response = await client.get(
                 "/api/stream/job-prange?preview=true",
                 headers={"Range": "bytes=0-1023"},
@@ -263,8 +268,38 @@ class TestStreamGating:
             assert response.status_code == 206
             assert response.headers.get("X-Freemium-Preview") == "true"
             assert response.headers.get("content-type") == "audio/mpeg"
-            assert f"0-1023/{file_size}" in response.headers.get("content-range", "")
+            # The Content-Range denominator MUST be the preview's virtual size,
+            # not the underlying file size — this is the bug being fixed.
+            assert (
+                f"0-1023/{effective_size}"
+                in response.headers.get("content-range", "")
+            )
             assert len(response.content) == 1024
+
+            # A range fully inside the preview but beyond the old truncation
+            # must succeed: browser incremental requests never get 416.
+            response_inside = await client.get(
+                "/api/stream/job-prange?preview=true",
+                headers={"Range": "bytes=491500-491519"},
+            )
+            assert response_inside.status_code == 206
+            assert (
+                "bytes 491500-491519/491520"
+                in response_inside.headers.get("content-range", "")
+            )
+
+            # A range that starts at/after the preview limit (but within the file)
+            # is genuinely unsatisfiable for the *preview* resource → 416, and
+            # the Content-Range must name the preview size, not the file size.
+            response_beyond = await client.get(
+                "/api/stream/job-prange?preview=true",
+                headers={"Range": "bytes=500000-"},
+            )
+            assert response_beyond.status_code == 416
+            assert (
+                "bytes */491520"
+                in response_beyond.headers.get("content-range", "")
+            )
         finally:
             settings.DB_PATH = original_db
             settings.OUTPUT_DIR = original_output
