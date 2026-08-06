@@ -38,4 +38,6 @@ Backend FastAPI para el generador de canciones personalizadas (API-only, sin UI 
 ### Arquitectura del front
 
 - El frontend habla con **2 backends**: POSBackend (.NET, `~/Descargas/PosBackend/`) para auth JWT y pagos (Mercado Pago), y este backend para generación/streaming de canciones.
+- ⚠️ **POSBackend NO se corre local**: vive deployado en Railway. Staging: `https://posbackend-staging.up.railway.app/api`. El módulo apunta ahí con `apiBase` (ver `src/environments/environment.ts` del frontend). El repo local `~/Descargas/PosBackend/` es solo fuente de código (branch `staging`).
+- ⚠️ **Ojo con el mix de entornos**: en dev, `apiBase` apunta a POSBackend staging (Railway) pero `cancionesApiBase` apunta al backend local (`http://localhost:8001/api`). El flujo checkout → pago → download solo cierra completo cuando `cancionesApiBase` también apunta al backend deployado (stage).
 - Decisión de arquitectura: no unificar backends; el módulo reusa auth, roles y componentes de pago existentes de POSCuentasCorrientes.
