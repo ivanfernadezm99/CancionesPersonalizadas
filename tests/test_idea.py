@@ -34,7 +34,8 @@ def _client() -> AsyncClient:
 
 @pytest.mark.asyncio
 async def test_create_with_idea_persists(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """POST /api/projects with idea should store and return it (RQ-IDEA-01)."""
     _setup(tmp_path, monkeypatch)
@@ -60,7 +61,8 @@ async def test_create_with_idea_persists(
 
 @pytest.mark.asyncio
 async def test_create_without_idea_stores_null(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """POST /api/projects without idea should store null (RQ-IDEA-01 scenario)."""
     _setup(tmp_path, monkeypatch)
@@ -85,7 +87,8 @@ async def test_create_without_idea_stores_null(
 
 @pytest.mark.asyncio
 async def test_patch_updates_idea(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """PATCH /api/projects/{id} with idea should update and return it (RQ-IDEA-01)."""
     _setup(tmp_path, monkeypatch)

@@ -33,25 +33,16 @@ def normalize_draft(result: LyricsResult) -> LyricsResult:
     Raises:
         LyricsGenerationError: If total lines after stripping are < 10.
     """
-    verses = [
-        Verse(number=v.number, lines=_strip_lines(v.lines))
-        for v in result.verses
-    ]
+    verses = [Verse(number=v.number, lines=_strip_lines(v.lines)) for v in result.verses]
     chorus = Chorus(lines=_strip_lines(result.chorus.lines))
-    bridge = (
-        Bridge(lines=_strip_lines(result.bridge.lines))
-        if result.bridge is not None
-        else None
-    )
+    bridge = Bridge(lines=_strip_lines(result.bridge.lines)) if result.bridge is not None else None
 
     total = sum(len(v.lines) for v in verses) + len(chorus.lines)
     if bridge is not None:
         total += len(bridge.lines)
 
     if total < 10:
-        raise LyricsGenerationError(
-            f"Generated draft is too short ({total} lines, minimum 10)"
-        )
+        raise LyricsGenerationError(f"Generated draft is too short ({total} lines, minimum 10)")
 
     return LyricsResult(
         verses=verses,
