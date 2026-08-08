@@ -19,6 +19,16 @@ class GenerateRequest(BaseModel):
     mood: str = Field(..., min_length=1, max_length=50, description="Song mood")
     story: str | None = Field(None, max_length=2000, description="Optional personal story")
     voice: str = Field(default="female", min_length=1, max_length=50, description="Voice ID for generation")
+    reference_song: str | None = Field(
+        None,
+        max_length=200,
+        description="Optional reference song for style (e.g. 'Bachata Rosa - Juan Luis Guerra')",
+    )
+    reference_description: str | None = Field(
+        None,
+        max_length=1000,
+        description="Auto-generated style description from audio reference",
+    )
 
 
 class Verse(BaseModel):
