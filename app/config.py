@@ -61,12 +61,13 @@ class Settings(BaseSettings):
     CLIP_RETRY_ATTEMPTS: int = 2
 
     # JWT Authentication
-    JWT_JWKS_URL: str = ""
-    JWT_ISSUER: str = "pos-backend"
-    JWT_AUDIENCE: str = "canciones-personalizadas"
-    JWT_ALGORITHM: str = "RS256"
-    JWT_AUTH_ENFORCED: bool = False
-    JWT_ALLOWED_ROLES: list[int] = [1, 2, 3, 4, 5]
+    JWT_JWKS_URL: str = ""  # deprecated — kept for backward compat, unused with HS256
+    JWT_ISSUER: str = "http://localhost"
+    JWT_AUDIENCE: str = "http://localhost"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_SHARED_SECRET: str = ""
+    JWT_AUTH_ENFORCED: bool = True
+    JWT_ALLOWED_ROLES: frozenset[int] = frozenset({1, 2, 3, 4, 5})
 
     # Payment settings
     SONG_PRICE: float = 5.00

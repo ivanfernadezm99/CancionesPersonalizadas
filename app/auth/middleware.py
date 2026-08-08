@@ -12,70 +12,55 @@ from jose.exceptions import JWTError
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse
 
-from app.auth import JWKSFetcher, get_jwks_fetcher
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 # ── Public routes that don't require authentication ───────────────────────────
 
-PUBLIC_ROUTES: set[str] = {"/", "/api/auth/health"}
+PUBLIC_ROUTES: set[str] = {
+    "/",
+    "/api/auth/health",
+    "/api/webhooks/payment-confirmed",
+}
+
+# ── ASP.NET claim URIs issued by POSBackend ───────────────────────────────────
+
+NAMEID_URI = "http://schemas.microsoft.com/ws/2008/06/identity/claims/nameidentifier"
+ROLE_URI = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+BUSINESS_CLAIM = "BusinessId"
 
 
 class AuthResult(Enum):
     """Result of token validation."""
+
     OK = "ok"
     MISSING_TOKEN = "missing_token"
     MALFORMED = "malformed"
     EXPIRED = "expired"  # not used separately — JWTError covers all
     BAD_SIGNATURE = "bad_signature"
-    JWKS_UNAVAILABLE = "jwks_unavailable"
+    JWKS_UNAVAILABLE = "jwks_unavailable"  # deprecated — kept for compat
     FORBIDDEN_ROLE = "forbidden_role"
 
 
 def _is_public_route(path: str) -> bool:
-    """Check if a route is publicly accessible without auth."""
+    """Check if a route is publicly accessible without auth.
+
+    The webhook path uses exact string match (no regex/prefix matching).
+    """
     return path in PUBLIC_ROUTES or path.startswith("/docs") or path.startswith("/openapi")
 
 
 async def _verify_token(token: str) -> tuple[dict[str, Any] | None, AuthResult]:
     """Verify a JWT token and return (claims, result).
 
-    Returns ``(None, AuthResult.*)`` when validation fails.
+    Verifies HS256 signature using the configured shared secret, checking
+    issuer, audience, and expiry. Returns ``(None, AuthResult.*)`` on failure.
     """
-    fetcher: JWKSFetcher = get_jwks_fetcher()
-
-    # Decode without verification first to get the kid header
-    try:
-        unverified_header = jwt.get_unverified_header(token)
-    except JWTError:
-        logger.warning("Failed to decode JWT header — malformed token")
-        return None, AuthResult.MALFORMED
-
-    kid: str | None = unverified_header.get("kid")
-    if not kid:
-        logger.warning("JWT missing 'kid' header")
-        return None, AuthResult.MALFORMED
-
-    # Get the public key from JWKS
-    try:
-        key = await fetcher.get_public_key(kid)
-    except Exception:
-        logger.exception("JWKS endpoint unreachable")
-        return None, AuthResult.JWKS_UNAVAILABLE
-
-    if key is None:
-        logger.warning("No JWKS key found for kid=%s", kid)
-        # If JWKS endpoint had an error trying to fetch, report it
-        if fetcher._fetch_error:  # type: ignore[attr-defined]  # noqa: SLF001
-            return None, AuthResult.JWKS_UNAVAILABLE
-        return None, AuthResult.BAD_SIGNATURE
-
-    # Verify signature, expiration, issuer, audience
     try:
         claims = jwt.decode(
             token,
-            key,
+            settings.JWT_SHARED_SECRET,
             algorithms=[settings.JWT_ALGORITHM],
             options={"verify_exp": True, "verify_iat": False},
             issuer=settings.JWT_ISSUER if settings.JWT_ISSUER else None,
@@ -114,7 +99,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: RequestResponseEndpoint,
     ) -> Response:
-        # Skip auth for public routes
+        # Skip auth for public routes (includes payment webhook)
         if _is_public_route(request.url.path):
             return await call_next(request)
 
@@ -132,7 +117,6 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         claims, result = await _verify_token(token)
 
         if result == AuthResult.JWKS_UNAVAILABLE:
-            # JWKS endpoint was unreachable — 503 regardless of mode
             return await _reject(
                 request,
                 status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -145,10 +129,10 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             logger.warning("Invalid token (permissive mode)")
             return await call_next(request)
 
-        # Extract claims
-        request.state.user_id = str(claims.get("sub", ""))  # type: ignore[union-attr]
-        request.state.role_id = int(claims.get("role", 0))  # type: ignore[union-attr]
-        request.state.business_id = str(claims.get("business_id", ""))  # type: ignore[union-attr]
+        # Extract claims from ASP.NET URIs
+        request.state.user_id = str(claims.get(NAMEID_URI, ""))  # type: ignore[union-attr]
+        request.state.role_id = int(claims.get(ROLE_URI, 0))  # type: ignore[union-attr]
+        request.state.business_id = str(claims.get(BUSINESS_CLAIM, ""))  # type: ignore[union-attr]
 
         # Role enforcement
         allowed_roles = settings.JWT_ALLOWED_ROLES

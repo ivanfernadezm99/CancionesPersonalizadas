@@ -16,6 +16,20 @@ import pytest
 import respx
 from httpx import ASGITransport, AsyncClient
 
+# ── JWT Auth default (backward compat) ────────────────────────────────────────
+# JWT_AUTH_ENFORCED defaults to True in app/config.py. Most existing tests hit
+# protected routes without a token for non-auth reasons, so default the whole
+# suite to permissive mode. Auth guard tests explicitly re-enable enforcement.
+# Keeps the baseline at the known pre-existing failures.
+
+
+@pytest.fixture(autouse=True)
+def _permissive_auth_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run non-auth tests in permissive JWT mode by default (overridable)."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", False)
+
 # ── DB Fixtures ──────────────────────────────────────────────────────────────────
 
 
