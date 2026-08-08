@@ -17,7 +17,8 @@ from httpx import ASGITransport, AsyncClient
 
 
 def _setup(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Configure test settings for voice router tests."""
     from app.config import settings
@@ -39,7 +40,8 @@ def _client() -> AsyncClient:
 
 @pytest.mark.asyncio
 async def test_get_voices_returns_seven_exact_entries(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GET /api/voices returns the 7 exact {id,label,gender} entries (RQ-VOICE-01)."""
     _setup(tmp_path, monkeypatch)
@@ -55,7 +57,8 @@ async def test_get_voices_returns_seven_exact_entries(
 
 @pytest.mark.asyncio
 async def test_get_voices_includes_es_latino_male(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GET /api/voices must include es-latino-male (RQ-VOICE-01 scenario 2)."""
     _setup(tmp_path, monkeypatch)
@@ -67,7 +70,8 @@ async def test_get_voices_includes_es_latino_male(
 
 @pytest.mark.asyncio
 async def test_get_voices_excludes_legacy_duo_and_children(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GET /api/voices must not include duo or children (RQ-VOICE-02)."""
     _setup(tmp_path, monkeypatch)
@@ -80,7 +84,8 @@ async def test_get_voices_excludes_legacy_duo_and_children(
 
 @pytest.mark.asyncio
 async def test_get_voices_keeps_female_and_male_labels(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GET /api/voices must keep exact 'Voz Femenina'/'Voz Masculina' labels (D1)."""
     _setup(tmp_path, monkeypatch)
@@ -96,7 +101,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_create_project_422_on_unknown_voice(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects with voice='celebrity_x' must return 422."""
         _setup(tmp_path, monkeypatch)
@@ -115,7 +122,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_create_project_422_on_legacy_duo(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects with voice='duo' must return 422 (RQ-VOICE-02)."""
         _setup(tmp_path, monkeypatch)
@@ -134,7 +143,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_create_project_422_on_legacy_children(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects with voice='children' must return 422 (RQ-VOICE-02)."""
         _setup(tmp_path, monkeypatch)
@@ -153,7 +164,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_create_project_accepts_es_latino_male(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects with voice='es-latino-male' must be accepted (RQ-VOICE-02)."""
         _setup(tmp_path, monkeypatch)
@@ -172,7 +185,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_patch_without_voice_does_not_422(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """PATCH /api/projects/{id} without a voice field must NOT 422 (D5)."""
         _setup(tmp_path, monkeypatch)
@@ -197,7 +212,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_patch_update_voice_rejects_unknown(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """PATCH /api/projects/{id} with voice='duo' must return 422 (RQ-VOICE-02)."""
         _setup(tmp_path, monkeypatch)
@@ -222,7 +239,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_generate_422_on_unknown_voice(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/generate with voice='duo' must return 422 (RQ-VOICE-02)."""
         _setup(tmp_path, monkeypatch)

@@ -45,7 +45,7 @@ class TestNormalizeDraft:
         result = _make_result(empty_line=True)
         normalized = normalize_draft(result)
         # Original chorus had a trailing "" which must be removed
-        chorus_lines = [line for line in normalized.chorus.lines]
+        chorus_lines = list(normalized.chorus.lines)
         assert "" not in chorus_lines
         assert all(line.strip() == line for line in chorus_lines)
 

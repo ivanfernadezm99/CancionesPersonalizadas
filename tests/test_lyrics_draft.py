@@ -64,7 +64,8 @@ def _short_result() -> LyricsResult:
 
 @pytest.mark.asyncio
 async def test_lyrics_draft_happy_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """POST lyrics-draft should call lyrics_generate with occasion='personalizada'
     and combine story + idea, returning the structured draft (RQ-DRAFT-01/02)."""
@@ -88,7 +89,8 @@ async def test_lyrics_draft_happy_path(
         )
 
         with patch(
-            "app.projects.router.lyrics_generate", new_callable=AsyncMock,
+            "app.projects.router.lyrics_generate",
+            new_callable=AsyncMock,
         ) as mock_gen:
             mock_gen.return_value = _valid_result()
 
@@ -115,7 +117,8 @@ async def test_lyrics_draft_happy_path(
 
 @pytest.mark.asyncio
 async def test_lyrics_draft_unknown_project_404(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """POST lyrics-draft for a non-existent project should return 404 (RQ-DRAFT-01)."""
     _setup(tmp_path, monkeypatch)
@@ -128,7 +131,8 @@ async def test_lyrics_draft_unknown_project_404(
 
 @pytest.mark.asyncio
 async def test_lyrics_draft_all_providers_fail_503(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """POST lyrics-draft when all LLM providers fail should return 503 (RQ-DRAFT-01)."""
     _setup(tmp_path, monkeypatch)
@@ -146,11 +150,10 @@ async def test_lyrics_draft_all_providers_fail_503(
         project_id = create_resp.json()["id"]
 
         with patch(
-            "app.projects.router.lyrics_generate", new_callable=AsyncMock,
+            "app.projects.router.lyrics_generate",
+            new_callable=AsyncMock,
         ) as mock_gen:
-            mock_gen.side_effect = LyricsGenerationError(
-                "All LLM providers unavailable"
-            )
+            mock_gen.side_effect = LyricsGenerationError("All LLM providers unavailable")
             resp = await client.post(
                 f"/api/projects/{project_id}/lyrics-draft",
             )
@@ -161,7 +164,8 @@ async def test_lyrics_draft_all_providers_fail_503(
 
 @pytest.mark.asyncio
 async def test_lyrics_draft_short_draft_503(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """POST lyrics-draft with a <10-line draft should return 503 (RQ-DRAFT-03)."""
     _setup(tmp_path, monkeypatch)
@@ -179,7 +183,8 @@ async def test_lyrics_draft_short_draft_503(
         project_id = create_resp.json()["id"]
 
         with patch(
-            "app.projects.router.lyrics_generate", new_callable=AsyncMock,
+            "app.projects.router.lyrics_generate",
+            new_callable=AsyncMock,
         ) as mock_gen:
             mock_gen.return_value = _short_result()
             resp = await client.post(
