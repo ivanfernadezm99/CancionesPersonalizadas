@@ -4,7 +4,27 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _validate_voice(v: str | None) -> str | None:
+    """Fail-fast voice validation against the registry (RQ-VOICE-02, D5).
+
+    Pydantic v2 runs validators on ``None`` too, so this MUST return the
+    value unchanged when it is ``None`` (e.g. PATCH without a voice field).
+    The registry is imported lazily to avoid a circular import between
+    ``app.models`` and ``app.voice.registry``.
+    """
+    if v is None:
+        return v
+    from app.voice.registry import get_voice
+
+    if get_voice(v) is None:
+        from app.voice.registry import VOICE_REGISTRY
+
+        valid = ", ".join(VOICE_REGISTRY.keys())
+        raise ValueError(f"Unknown voice '{v}'. Valid options: {valid}")
+    return v
 
 
 class GenerateRequest(BaseModel):
@@ -29,6 +49,8 @@ class GenerateRequest(BaseModel):
         max_length=1000,
         description="Auto-generated style description from audio reference",
     )
+
+    _validate_voice = field_validator("voice")(_validate_voice)
 
 
 class Verse(BaseModel):
@@ -66,8 +88,16 @@ class VoiceConfig(BaseModel):
 
     id: str = Field(..., description="Unique voice identifier")
     label: str = Field(..., description="Human-readable label")
-    gender: str = Field(..., description="Gender: male or female")
+    gender: str = Field(..., description="Gender: male, female, or child")
     prompt_es: str = Field(..., description="Spanish prompt descriptor for Lyria 3")
+
+
+class VoiceInfo(BaseModel):
+    """Public voice info exposed by GET /api/voices (RQ-VOICE-01)."""
+
+    id: str = Field(..., description="Unique voice identifier")
+    label: str = Field(..., description="Human-readable label")
+    gender: str = Field(..., description="Gender: male, female, or child")
 
 
 class JobStatusResponse(BaseModel):
@@ -113,6 +143,8 @@ class SongProjectCreate(BaseModel):
     )
     chaining_enabled: bool = Field(default=False, description="Use clip chaining for the final song instead of pro-preview")
 
+    _validate_voice = field_validator("voice")(_validate_voice)
+
 
 class StoryFragmentAdd(BaseModel):
     """Add a story fragment to a project."""
@@ -139,6 +171,8 @@ class SongProjectUpdate(BaseModel):
     reference_description: str | None = Field(None, max_length=1000)
     chaining_enabled: bool | None = Field(None, description="Enable clip chaining for final song generation")
     fragment: StoryFragmentAdd | None = None
+
+    _validate_voice = field_validator("voice")(_validate_voice)
 
 
 class StoryFragmentResponse(BaseModel):
