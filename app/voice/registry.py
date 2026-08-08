@@ -25,6 +25,36 @@ VOICE_REGISTRY: dict[str, VoiceConfig] = {
         gender="male",
         prompt_es="cantante masculino español, voz cálida y romántica",
     ),
+    "es-latino-male": VoiceConfig(
+        id="es-latino-male",
+        label="Español hombre latino",
+        gender="male",
+        prompt_es="voz masculina latina, cantante hombre latinoamericano, cálida y expresiva",
+    ),
+    "es-espana-male": VoiceConfig(
+        id="es-espana-male",
+        label="Español hombre España",
+        gender="male",
+        prompt_es="voz masculina española, cantante masculino español, cálida y romántica",
+    ),
+    "es-espana-female": VoiceConfig(
+        id="es-espana-female",
+        label="Mujer española",
+        gender="female",
+        prompt_es="voz femenina española, cantante femenina española, dulce y melódica",
+    ),
+    "es-latina-female": VoiceConfig(
+        id="es-latina-female",
+        label="Mujer latina",
+        gender="female",
+        prompt_es="voz femenina latina, cantante mujer latina, dulce y apasionada",
+    ),
+    "es-espana-child": VoiceConfig(
+        id="es-espana-child",
+        label="Voz infantil española",
+        gender="child",
+        prompt_es="voz infantil española, niño cantando, inocente y tierno",
+    ),
 }
 
 

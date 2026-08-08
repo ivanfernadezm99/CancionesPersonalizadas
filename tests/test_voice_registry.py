@@ -30,9 +30,43 @@ def test_registry_has_male_entry() -> None:
     assert "masculino" in entry.prompt_es
 
 
-def test_registry_has_exactly_two_entries() -> None:
-    """VOICE_REGISTRY should have exactly 2 entries (female, male)."""
-    assert len(VOICE_REGISTRY) == 2
+def test_registry_has_exactly_seven_entries() -> None:
+    """VOICE_REGISTRY should have exactly 7 entries (RQ-VOI-01)."""
+    assert len(VOICE_REGISTRY) == 7
+
+
+def test_registry_contains_all_new_regional_voices() -> None:
+    """VOICE_REGISTRY should include the 5 new regional voices (RQ-VOI-01)."""
+    for voice_id in (
+        "es-latino-male",
+        "es-espana-male",
+        "es-espana-female",
+        "es-latina-female",
+        "es-espana-child",
+    ):
+        assert voice_id in VOICE_REGISTRY
+        entry = VOICE_REGISTRY[voice_id]
+        assert isinstance(entry, VoiceConfig)
+        assert entry.id == voice_id
+        assert entry.label
+        assert entry.gender in {"male", "female", "child"}
+        assert entry.prompt_es
+
+
+def test_registry_has_no_legacy_duo_or_children() -> None:
+    """VOICE_REGISTRY must not contain legacy 'duo' or 'children' (RQ-VOI-02)."""
+    assert "duo" not in VOICE_REGISTRY
+    assert "children" not in VOICE_REGISTRY
+
+
+def test_exact_label_casing_female() -> None:
+    """Female label must keep exact casing 'Voz Femenina' (D1)."""
+    assert VOICE_REGISTRY["female"].label == "Voz Femenina"
+
+
+def test_exact_label_casing_male() -> None:
+    """Male label must keep exact casing 'Voz Masculina' (D1)."""
+    assert VOICE_REGISTRY["male"].label == "Voz Masculina"
 
 
 def test_get_voice_returns_config() -> None:
