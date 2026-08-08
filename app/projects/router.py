@@ -14,10 +14,13 @@ from fastapi import APIRouter, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.audio_analysis import analyze_audio
+from app.lyrics import generate as lyrics_generate
+from app.lyrics.providers import LyricsGenerationError
 from app.models import (
     AudioReferenceResponse,
     CheckoutResponse,
     JobCreateResponse,
+    LyricsResult,
     ReplaceFragmentsRequest,
     SongProjectCreate,
     SongProjectResponse,
@@ -28,6 +31,7 @@ from app.models import (
 from app.projects import create_final_job, create_preview_job
 from app.projects import create_project as orch_create_project
 from app.projects import ref_audio, store
+from app.projects.draft import normalize_draft
 from app.projects.payment import create_checkout, webhook_router
 
 router = APIRouter(prefix="/api/projects")
@@ -238,6 +242,62 @@ async def create_final(project_id: str) -> JobCreateResponse:
                 detail={"error": "project_not_found", "project_id": project_id},
             )
         raise
+
+
+@router.post("/{project_id}/lyrics-draft", response_model=LyricsResult)
+async def lyrics_draft(project_id: str) -> LyricsResult:
+    """Generate editable draft lyrics for a project (RQ-DRAFT-01).
+
+    Combines the project's recipient, accumulated story fragments, and the
+    optional ``idea`` seed, then calls the lyrics generation cascade with a
+    hard-coded ``occasion="personalizada"`` (there is no occasion column).
+
+    Maps any ``LyricsGenerationError`` (all providers failed OR draft < 10
+    lines) to a 503 "all LLM providers unavailable".
+    """
+    from app.config import settings
+
+    project = await store.get_project(project_id, db_path=settings.DB_PATH)
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "project_not_found", "project_id": project_id},
+        )
+
+    story = await store.get_accumulated_story(project_id, db_path=settings.DB_PATH)
+    idea = project.get("idea")
+
+    try:
+        result = await lyrics_generate(
+            recipient=project["recipient"],
+            relationship=project["relationship"],
+            occasion="personalizada",
+            genre=project["genre"],
+            mood=project["mood"],
+            story=story,
+            idea=idea,
+            reference_song=project.get("reference_song"),
+            reference_description=project.get("reference_description"),
+        )
+    except LyricsGenerationError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "all_llm_providers_unavailable",
+                "message": "all LLM providers unavailable",
+            },
+        )
+
+    try:
+        return normalize_draft(result)
+    except LyricsGenerationError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "all_llm_providers_unavailable",
+                "message": "all LLM providers unavailable",
+            },
+        )
 
 
 @router.post("/{project_id}/reference-audio")
