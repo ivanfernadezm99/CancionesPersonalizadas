@@ -27,7 +27,9 @@ class TestCreateProject:
 
     @pytest.mark.asyncio
     async def test_create_project_returns_201(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects should return 201 with project ID."""
         from app.config import settings
@@ -62,7 +64,9 @@ class TestCreateProject:
 
     @pytest.mark.asyncio
     async def test_create_project_with_reference_song(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects with reference_song should include it."""
         from app.config import settings
@@ -102,7 +106,9 @@ class TestCreateProject:
 
     @pytest.mark.asyncio
     async def test_create_project_returns_422_on_invalid(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects with invalid data should return 422."""
         from app.config import settings
@@ -130,7 +136,9 @@ class TestGetProject:
 
     @pytest.mark.asyncio
     async def test_get_project_returns_200(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """GET /api/projects/{id} should return the project."""
         from app.config import settings
@@ -174,7 +182,9 @@ class TestGetProject:
 
     @pytest.mark.asyncio
     async def test_get_project_missing_returns_404(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """GET /api/projects/{missing} should return 404."""
         from app.config import settings
@@ -199,7 +209,9 @@ class TestPatchProject:
 
     @pytest.mark.asyncio
     async def test_patch_updates_fields(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """PATCH /api/projects/{id} should update fields and return project."""
         from app.config import settings
@@ -239,7 +251,9 @@ class TestPatchProject:
 
     @pytest.mark.asyncio
     async def test_patch_adds_fragment(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """PATCH /api/projects/{id} with fragment should accumulate story."""
         from app.config import settings
@@ -290,7 +304,9 @@ class TestPatchProject:
 
     @pytest.mark.asyncio
     async def test_patch_missing_returns_404(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """PATCH /api/projects/{missing} should return 404."""
         from app.config import settings
@@ -318,7 +334,9 @@ class TestPreviewEndpoint:
 
     @pytest.mark.asyncio
     async def test_preview_returns_202(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects/{id}/preview should return 202 with job_id."""
         from app.config import settings
@@ -366,7 +384,9 @@ class TestPreviewEndpoint:
 
     @pytest.mark.asyncio
     async def test_preview_no_fragments_returns_400(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects/{id}/preview with 0 fragments should return 400."""
         from app.config import settings
@@ -408,7 +428,9 @@ class TestFinalEndpoint:
 
     @pytest.mark.asyncio
     async def test_final_returns_202(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects/{id}/final should return 202 with job_id when paid."""
         from app.config import settings
@@ -465,12 +487,100 @@ class TestFinalEndpoint:
             assert data["status"] == "queued"
 
 
+class TestReferenceAudioUrl:
+    """GET /api/projects/{id} reference_audio_url contract (RQ-REF-AUDIO-01)."""
+
+    @pytest.mark.asyncio
+    async def test_get_project_returns_reference_audio_url_when_stored(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """GET project returns reference_audio_url when the ref audio file exists."""
+        from app.config import settings
+
+        output_dir = tmp_path / "output"
+        monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
+        monkeypatch.setattr(settings, "OUTPUT_DIR", str(output_dir))
+        monkeypatch.setattr(settings, "PUBLIC_BASE_URL", "https://example.com")
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
+        monkeypatch.setattr(settings, "OPENCLAW_TOKEN", "test-token")
+        monkeypatch.setattr(settings, "MAX_CONCURRENT_JOBS", 5)
+        monkeypatch.setattr("app.main._active_requests", 0)
+
+        from app.main import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            create_resp = await client.post(
+                "/api/projects",
+                json={
+                    "recipient": "María",
+                    "relationship": "pareja",
+                    "genre": "bachata",
+                    "mood": "romántica",
+                    "voice": "female",
+                },
+            )
+            project_id = create_resp.json()["id"]
+
+            # Place a reference audio file on disk for this project (Suno Cover mode)
+            ref_dir = output_dir / "ref-audio" / project_id
+            ref_dir.mkdir(parents=True, exist_ok=True)
+            (ref_dir / "reference.mp3").write_bytes(b"\xff\xfb\x90\x00" + b"X" * 100)
+
+            get_resp = await client.get(f"/api/projects/{project_id}")
+            assert get_resp.status_code == 200
+            assert get_resp.json()["reference_audio_url"] == (
+                "https://example.com/api/projects/ref-audio/" + project_id
+            )
+
+    @pytest.mark.asyncio
+    async def test_get_project_reference_audio_url_null_when_not_stored(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """GET project returns null reference_audio_url when no ref audio file exists."""
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
+        monkeypatch.setattr(settings, "OUTPUT_DIR", str(tmp_path / "output"))
+        monkeypatch.setattr(settings, "PUBLIC_BASE_URL", "https://example.com")
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
+        monkeypatch.setattr(settings, "OPENCLAW_TOKEN", "test-token")
+        monkeypatch.setattr(settings, "MAX_CONCURRENT_JOBS", 5)
+        monkeypatch.setattr("app.main._active_requests", 0)
+
+        from app.main import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            create_resp = await client.post(
+                "/api/projects",
+                json={
+                    "recipient": "María",
+                    "relationship": "pareja",
+                    "genre": "bachata",
+                    "mood": "romántica",
+                    "voice": "female",
+                },
+            )
+            project_id = create_resp.json()["id"]
+
+            get_resp = await client.get(f"/api/projects/{project_id}")
+            assert get_resp.status_code == 200
+            assert get_resp.json()["reference_audio_url"] is None
+
+
 class TestIntegration:
     """Full integration test for project flow."""
 
     @pytest.mark.asyncio
     async def test_full_project_flow(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Create project → add fragments → preview → pay → final."""
         from app.config import settings

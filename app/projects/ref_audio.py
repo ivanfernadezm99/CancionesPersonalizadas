@@ -68,7 +68,11 @@ def get_reference_audio_url(project_id: str) -> str | None:
     if not settings.PUBLIC_BASE_URL:
         return None
     base = settings.PUBLIC_BASE_URL.rstrip("/")
-    return f"{base}/api/ref-audio/{project_id}"
+    # NOTE: the media route is JWT-protected (router.py /api/projects/ref-audio/{id}),
+    # so this URL cannot be consumed directly by an <audio> tag (no Authorization
+    # header). It is returned for metadata/display and future proxy use. Known
+    # limitation — auth for media is intentionally NOT solved here.
+    return f"{base}/api/projects/ref-audio/{project_id}"
 
 
 def cleanup_reference_audio(project_id: str) -> None:

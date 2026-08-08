@@ -66,6 +66,11 @@ def _project_to_response(project: dict) -> SongProjectResponse:
         voice=project["voice"],
         reference_song=project.get("reference_song"),
         reference_description=project.get("reference_description"),
+        reference_audio_url=(
+            ref_audio.get_reference_audio_url(project["id"])
+            if ref_audio.has_reference_audio(project["id"])
+            else None
+        ),
         idea=project.get("idea"),
         status=project["status"],
         fragments=fragments,
@@ -105,13 +110,16 @@ async def get_project(project_id: str) -> SongProjectResponse:
 
 @router.patch("/{project_id}")
 async def update_project(
-    project_id: str, data: SongProjectUpdate,
+    project_id: str,
+    data: SongProjectUpdate,
 ) -> SongProjectResponse:
     """Update project fields and/or add a story fragment."""
     from app.config import settings
 
     found = await store.update_project(
-        project_id, data, db_path=settings.DB_PATH,
+        project_id,
+        data,
+        db_path=settings.DB_PATH,
     )
     if not found:
         raise HTTPException(
@@ -129,7 +137,8 @@ COMPLETED_STATUSES = frozenset({"paid", "completed"})
 
 @router.put("/{project_id}/fragments")
 async def replace_fragments(
-    project_id: str, data: ReplaceFragmentsRequest,
+    project_id: str,
+    data: ReplaceFragmentsRequest,
 ) -> SongProjectResponse:
     """Replace the full story fragment list of a project.
 
@@ -156,7 +165,9 @@ async def replace_fragments(
         )
 
     found = await store.replace_fragments(
-        project_id, data.fragments, db_path=settings.DB_PATH,
+        project_id,
+        data.fragments,
+        db_path=settings.DB_PATH,
     )
     if not found:
         raise HTTPException(
@@ -302,7 +313,8 @@ async def lyrics_draft(project_id: str) -> LyricsResult:
 
 @router.post("/{project_id}/reference-audio")
 async def upload_reference_audio(
-    project_id: str, file: UploadFile,
+    project_id: str,
+    file: UploadFile,
 ) -> AudioReferenceResponse:
     """Upload an audio file as style reference for the project.
 
