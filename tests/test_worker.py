@@ -204,3 +204,96 @@ class TestFormatLyricsForMusic:
         assert "[Verse 2]" in text
         assert "V1a" in text
         assert "V2d" in text
+
+
+class TestLegacyVoiceNormalization:
+    """Legacy 'duo'/'children' voice values are normalized at read time (T7/T8).
+
+    Old projects stored with voice='duo' or 'children' must rebuild a valid
+    GenerateRequest instead of raising ValidationError->500 when a preview or
+    final job is created.
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_preview_job_normalizes_duo_voice(
+        self, tmp_path: Path,
+    ) -> None:
+        """create_preview_job should map stored voice='duo' to 'female'."""
+        import uuid
+
+        import aiosqlite
+
+        from app.config import settings
+        from app.projects import create_preview_job
+        from app.projects import store as project_store
+
+        db_path = str(tmp_path / "projects.db")
+        original_db = settings.DB_PATH
+        try:
+            settings.DB_PATH = db_path
+            await project_store.init_schema(db_path)
+            project_id = str(uuid.uuid4())
+            now = "2026-01-01T00:00:00+00:00"
+            # Insert a legacy project row directly with voice='duo' + one fragment
+            conn = await aiosqlite.connect(db_path)
+            await conn.execute(
+                """INSERT INTO projects (id, recipient, relationship, genre, mood,
+                                          voice, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?)""",
+                (project_id, "María", "pareja", "bachata", "romántica", "duo", now, now),
+            )
+            await conn.execute(
+                "INSERT INTO story_fragments (project_id, fragment, sort_order, created_at) VALUES (?, ?, 1, ?)",
+                (project_id, "Nuestro primer viaje", now),
+            )
+            await conn.commit()
+            await conn.close()
+
+            with patch("app.projects.project_worker", new_callable=AsyncMock):
+                # Should NOT raise (no ValidationError) and produce a valid request
+                job = await create_preview_job(project_id)
+
+            assert job.status == "queued"
+        finally:
+            settings.DB_PATH = original_db
+
+    @pytest.mark.asyncio
+    async def test_create_final_job_normalizes_children_voice(
+        self, tmp_path: Path,
+    ) -> None:
+        """create_final_job should map stored voice='children' to 'es-espana-child'."""
+        import uuid
+
+        import aiosqlite
+
+        from app.config import settings
+        from app.projects import create_final_job
+        from app.projects import store as project_store
+
+        db_path = str(tmp_path / "projects.db")
+        original_db = settings.DB_PATH
+        try:
+            settings.DB_PATH = db_path
+            await project_store.init_schema(db_path)
+            project_id = str(uuid.uuid4())
+            now = "2026-01-01T00:00:00+00:00"
+            conn = await aiosqlite.connect(db_path)
+            await conn.execute(
+                """INSERT INTO projects (id, recipient, relationship, genre, mood,
+                                          voice, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'paid', ?, ?)""",
+                (project_id, "Ana", "hija", "pop", "alegre", "children", now, now),
+            )
+            await conn.execute(
+                "INSERT INTO story_fragments (project_id, fragment, sort_order, created_at) VALUES (?, ?, 1, ?)",
+                (project_id, "Un día especial", now),
+            )
+            await conn.commit()
+            await conn.close()
+
+            with patch("app.projects.project_worker", new_callable=AsyncMock):
+                job = await create_final_job(project_id)
+
+            assert job.status == "queued"
+        finally:
+            settings.DB_PATH = original_db
