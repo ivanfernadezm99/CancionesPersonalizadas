@@ -62,6 +62,7 @@ def _project_to_response(project: dict) -> SongProjectResponse:
         voice=project["voice"],
         reference_song=project.get("reference_song"),
         reference_description=project.get("reference_description"),
+        idea=project.get("idea"),
         status=project["status"],
         fragments=fragments,
         previews=previews,

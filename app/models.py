@@ -141,6 +141,9 @@ class SongProjectCreate(BaseModel):
     reference_description: str | None = Field(
         None, max_length=1000, description="Auto-generated style description from uploaded audio reference"
     )
+    idea: str | None = Field(
+        None, max_length=2000, description="Optional free-text idea used as a thematic seed for draft lyrics (RQ-IDEA-01)"
+    )
     chaining_enabled: bool = Field(default=False, description="Use clip chaining for the final song instead of pro-preview")
 
     _validate_voice = field_validator("voice")(_validate_voice)
@@ -169,6 +172,9 @@ class SongProjectUpdate(BaseModel):
     voice: str | None = Field(None, min_length=1, max_length=50)
     reference_song: str | None = Field(None, max_length=200)
     reference_description: str | None = Field(None, max_length=1000)
+    idea: str | None = Field(
+        None, max_length=2000, description="Optional free-text idea (RQ-IDEA-01)"
+    )
     chaining_enabled: bool | None = Field(None, description="Enable clip chaining for final song generation")
     fragment: StoryFragmentAdd | None = None
 
@@ -204,6 +210,9 @@ class SongProjectResponse(BaseModel):
     voice: str
     reference_song: str | None
     reference_description: str | None
+    idea: str | None = Field(
+        None, max_length=2000, description="Optional free-text idea (RQ-IDEA-01)"
+    )
     status: str
     fragments: list[StoryFragmentResponse]
     previews: list[ProjectPreview]
