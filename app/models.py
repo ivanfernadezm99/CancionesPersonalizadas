@@ -49,6 +49,11 @@ class GenerateRequest(BaseModel):
         max_length=1000,
         description="Auto-generated style description from audio reference",
     )
+    idea: str | None = Field(
+        None,
+        max_length=2000,
+        description="Optional free-text thematic seed for lyrics (RQ-LYR-07)",
+    )
 
     _validate_voice = field_validator("voice")(_validate_voice)
 
