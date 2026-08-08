@@ -54,8 +54,8 @@ Per-slice deltas (back/front): S1 ~90/~90, S2 ~120/~140 — each well under budg
 - [x] T6 (GREEN, backend) — `app/models.py`: `_validate_voice` `@field_validator` on `GenerateRequest`/`SongProjectCreate`/`SongProjectUpdate`; `return v if v is not None`; lazy `get_voice`. `python3 -m pytest tests/test_voice_router.py`.
 - [x] T7 (RED, backend) — `tests/test_worker.py`: rebuild `GenerateRequest` from stored `voice="duo"` maps to valid voice (no ValidationError→500).
 - [x] T8 (GREEN, backend) — `app/projects/__init__.py`: normalize legacy `duo`→`female`, `children`→`es-espana-child` at read time in `create_preview_job`/`create_final_job`. `python3 -m pytest tests/test_worker.py`.
-- [ ] T9 (RED, frontend) — **out of scope (frontend module lives in POSCuentasCorrientes repo)**
-- [ ] T10 (GREEN, frontend) — **out of scope (frontend module lives in POSCuentasCorrientes repo)**
+- [x] T9 (RED, frontend) — implemented in POSCuentasCorrientes repo (branch `stg`): voice select tests (getVoices, no duo/children, mirror fallback on 401).
+- [x] T10 (GREEN, frontend) — implemented in POSCuentasCorrientes repo: `VoiceInfo`/`idea` in models.ts, `getVoices()` + fallback mirror in canciones.service.ts, data-driven voice select in create-project.component.ts.
 - [ ] T11 (verify/deploy, both) — **pending staging; needs MUSIC_PROVIDER=suno + MP3 upload on staging (deploy task, not backend apply)**
 
 ## Phase 2: Idea Field + Lyrics Autodraft (Slice 2)
@@ -70,13 +70,13 @@ Per-slice deltas (back/front): S1 ~90/~90, S2 ~120/~140 — each well under budg
 - [x] T19 (GREEN, backend) — `app/projects/router.py`: `POST /{id}/lyrics-draft` — `store.get_project`→404; build `story`+`idea`; call `lyrics_generate(...)` with `occasion="personalizada"`; route-level `try/except LyricsGenerationError`→503 `"all LLM providers unavailable"`; `normalize_draft`. `python3 -m pytest tests/test_lyrics_draft.py`.
 - [x] T20 (RED, backend) — `tests/test_worker.py`: preview/final `GenerateRequest` includes `idea=project.get("idea")`.
 - [x] T21 (GREEN, backend) — `app/projects/__init__.py` add `idea=project.get("idea")` to `create_preview_job`/`create_final_job` GenerateRequest + metadata; `app/jobs/worker.py` thread `params.idea` → `lyrics_generate`. `python3 -m pytest tests/test_worker.py`.
-- [ ] T22 (RED, frontend) — **out of scope (frontend module lives in POSCuentasCorrientes repo)**
-- [ ] T23 (GREEN, frontend) — **out of scope (frontend module lives in POSCuentasCorrientes repo)**
+- [x] T22 (RED, frontend) — implemented in POSCuentasCorrientes repo: autodraft fills fragments via replaceFragments; 503 keeps fragments, stops loading, no double-submit.
+- [x] T23 (GREEN, frontend) — implemented in POSCuentasCorrientes repo: `LyricsDraftResponse` in models.ts, `lyricsDraft()` in canciones.service.ts, idea textarea + "Autogenerar letra" + draft→fragments mapping in create-project.component.ts.
 
 ## Phase 3: Verification
 
 - [x] T24 — Full backend: `python3 -m pytest` (377 passed, 5 pre-existing infra failures); `ruff check .` (95, net -2 vs 97 baseline); `black . --check` (new files formatted); `mypy .` (16, net -1 vs 17 baseline).
-- [ ] T25 — Full frontend: **out of scope (frontend module lives in POSCuentasCorrientes repo)**
+- [x] T25 — Full frontend: **implemented in POSCuentasCorrientes repo** — module jest green (88 passed, 7 suites), tsc clean. Production build BLOCKED by pre-existing `preview.component.ts:70` null-safety error (baseline reference-song-style commit `2895148`, not part of this change).
 - [ ] T26 — Staging verify: **pending deploy; `/api/voices`, 422, idea autodraft, reference-song on staging**
 
 ## Gate Findings Resolved

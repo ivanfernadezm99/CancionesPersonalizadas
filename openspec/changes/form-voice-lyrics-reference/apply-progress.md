@@ -105,3 +105,52 @@ T22–T26 are frontend/staging — out of backend scope for this apply batch.
 ## Status
 Backend: **18/18 backend T-tasks complete** (T1–T21, excluding frontend T9/T10/T22/T23/T25 and pending staging T11/T26).
 Ready for `sdd-verify` (backend). Note pre-existing failures above.
+
+---
+
+# Frontend Apply Progress — form-voice-lyrics-reference (POSCuentasCorrientes)
+
+Repo: `~/Descargas/POSCuentasCorrientes` (branch `stg`). Mode: `hybrid`.
+Frontend tasks T9, T10, T22, T23, T25 (out of scope in the backend repo) were
+implemented here and committed as three work-unit commits. Strict TDD (RED→GREEN
+→TRIANGULATE→REFACTOR) per frontend `openspec/config.yaml` (`strict_tdd: true`).
+
+## Commit history (frontend, branch `stg`)
+- `2895148` feat(canciones): add reference song input and MP3 audio upload (BASELINE commit of in-flight reference-song-style work — do not revert; kept out of feature diffs)
+- `89e2fb1` feat(canciones): data-driven voice select with regional voice options (T9/T10)
+- `334243a` feat(canciones): autogenerate lyrics draft from idea and fill fragments editor (T22/T23)
+
+## TDD Cycle Evidence (frontend)
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| T9 (voice select) | `create/create-project.component.spec.ts` | Unit | ✅ 79/79 | ✅ Written | ✅ Passed | ✅ 3 cases | ✅ Clean |
+| T10 (getVoices + fallback) | `canciones.service.spec.ts`, `create-project.component.spec.ts` | Unit | ✅ 79/79 | ✅ Written | ✅ Passed | ✅ 2 cases (API + 401 fallback) | ✅ Clean |
+| T22 (autodraft RED) | `create/create-project.component.spec.ts` | Unit | ✅ 79/79 | ✅ Written | ✅ Passed | ✅ 3 cases (fill, 503, double-submit) | ✅ Clean |
+| T23 (lyricsDraft + idea) | `canciones.service.spec.ts`, `create-project.component.spec.ts` | Unit | ✅ 79/79 | ✅ Written | ✅ Passed | ✅ 2 cases | ✅ Clean |
+
+### Test Summary (frontend)
+- **Total tests written**: 9 (2 service + 7 component)
+- **Total tests passing**: 88/88 (baseline 79 → 88; 7 suites)
+- **Layers used**: Unit (88)
+- **Approval tests** (refactoring): None — no refactoring tasks
+- **Pure functions created**: 0 (Angular components/service methods with state)
+
+## Implementation details (frontend)
+- `models.ts` — `VoiceInfo {id,label,gender}`; `idea?` on `CreateProjectRequest`/`UpdateProjectRequest`; `DraftVerse` + `LyricsDraftResponse` (mirror of backend `LyricsResult`: verses/chorus/bridge/language/title_suggestion/provider).
+- `canciones.service.ts` — `getVoices(): Observable<VoiceInfo[]>` GET `${base}/voices` with curated 7-entry mirror fallback (`// fallback-only — must mirror VOICE_REGISTRY`) on error/401 via `catchError`; `lyricsDraft(id)` POST `${base}/projects/${id}/lyrics-draft`.
+- `create-project.component.ts` — data-driven voice `<select>` fed by `getVoices()` (fallback mirrors registry on 401); `duo`/`children` removed; idea textarea + "Autogenerar letra" button (edit mode only — requires existing project id); loading state (`autodrafting`), error without clearing fragments, no double-submit; draft→fragments mapping: verse→`Estrofa {n}\n`+lines, chorus→`Estribillo\n`, bridge→`Puente\n`, persisted via `replaceFragments`.
+
+## Verification (frontend)
+- `npx jest src/app/canciones-personalizadas/` → **88 passed, 7 suites** (green).
+- `npx tsc --noEmit -p tsconfig.app.json` → **clean** (no canciones errors).
+- `npx prettier --check` → **all modified files formatted** (4 reformatted, then re-verified green).
+- `ng build --configuration staging` → **BLOCKED** by a PRE-EXISTING error in `src/app/canciones-personalizadas/preview/preview.component.ts:70` (`Object is possibly 'null'` on `project.reference_audio_url` in an `[src]` binding). This file belongs to the baseline reference-song-style commit `2895148`, NOT to this change. Not fixed here (out of scope, would mix concerns); module jest + tsc are fully green. Recommended: a one-line template null-safe fix (`project?.reference_audio_url`) as a separate follow-up.
+
+## Artifacts
+- OpenSpec apply-progress: this file (frontend section appended).
+- Engram apply-progress: topic key `sdd/form-voice-lyrics-reference/apply-progress` (observation #3182, merged — not overwritten).
+- Engram tasks observation updated: T9/T10/T22/T23/T25 marked complete.
+
+## Status (frontend)
+Frontend: **5/5 frontend tasks complete** (T9, T10, T22, T23, T25-jest/tsc). Production build pending the pre-existing preview.component.ts null-safety fix (separate follow-up). Ready for `sdd-verify` (frontend).
