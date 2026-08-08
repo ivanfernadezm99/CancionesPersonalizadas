@@ -94,6 +94,7 @@ def build_user_prompt(
     story: str | None = None,
     reference_song: str | None = None,
     reference_description: str | None = None,
+    idea: str | None = None,
 ) -> str:
     """Build the full user prompt for the LLM based on input parameters.
 
@@ -106,6 +107,7 @@ def build_user_prompt(
         story: Optional personal story or anecdote (max 2000 chars).
         reference_song: Optional reference song name for style inspiration.
         reference_description: Optional detailed style description from audio analysis.
+        idea: Optional free-text thematic seed for the lyrics (RQ-LYR-07).
 
     Returns:
         A complete Spanish prompt string for the LLM.
@@ -118,6 +120,11 @@ def build_user_prompt(
         f"Tono: {mood}.",
         genre_instructions,
     ]
+
+    if idea:
+        parts.append(
+            f"Idea principal: {idea}. Usa esta idea como tema central de la letra."
+        )
 
     if story:
         story = story[:2000]
