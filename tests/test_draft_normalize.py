@@ -92,3 +92,59 @@ class TestNormalizeDraft:
         if normalized.bridge is not None:
             total += len(normalized.bridge.lines)
         assert total >= 10
+
+    def test_drops_verse_that_strips_to_empty(self) -> None:
+        """A verse whose lines are all whitespace after strip must be dropped, not 422.
+
+        Regression: constructing ``Verse(lines=[])`` violates ``min_length=1`` and
+        leaked a pydantic ValidationError -> 422. The section must be filtered out.
+        """
+        result = LyricsResult(
+            verses=[
+                {"number": 1, "lines": ["", "   ", "  "]},
+                {"number": 2, "lines": ["v2 a", "v2 b", "v2 c", "v2 d"]},
+            ],
+            chorus={"lines": ["c1", "c2", "c3", "c4"]},
+            bridge={"lines": ["b1", "b2"]},
+            language="es",
+            title_suggestion="T",
+            provider="mock",
+        )
+        normalized = normalize_draft(result)
+        assert [v.number for v in normalized.verses] == [2]
+
+    def test_raises_when_chorus_strips_to_empty(self) -> None:
+        """A chorus with only empty lines must raise LyricsGenerationError (503), not 422.
+
+        Chorus is structurally required, so an empty chorus is a degenerate draft
+        that maps to the documented invalid-draft -> 503 contract.
+        """
+        result = LyricsResult(
+            verses=[
+                {"number": 1, "lines": ["a", "b", "c", "d"]},
+                {"number": 2, "lines": ["e", "f", "g", "h"]},
+            ],
+            chorus={"lines": ["   ", ""]},
+            bridge=None,
+            language="es",
+            title_suggestion="T",
+            provider="mock",
+        )
+        with pytest.raises(LyricsGenerationError):
+            normalize_draft(result)
+
+    def test_raises_when_all_verses_strip_to_empty(self) -> None:
+        """If every verse strips to empty, normalize_draft must raise (503), not 422."""
+        result = LyricsResult(
+            verses=[
+                {"number": 1, "lines": ["", " "]},
+                {"number": 2, "lines": ["  ", "   "]},
+            ],
+            chorus={"lines": ["c1", "c2", "c3", "c4"]},
+            bridge=None,
+            language="es",
+            title_suggestion="T",
+            provider="mock",
+        )
+        with pytest.raises(LyricsGenerationError):
+            normalize_draft(result)

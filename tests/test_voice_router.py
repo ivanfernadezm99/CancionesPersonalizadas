@@ -10,10 +10,34 @@ Covers:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from jose import jwt
+
+NAMEID_URI = "http://schemas.microsoft.com/ws/2008/06/identity/claims/nameidentifier"
+ROLE_URI = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+BUSINESS_CLAIM = "BusinessId"
+
+TEST_SECRET = "test-shared-secret-0123456789abcdef"
+
+
+def _make_hs256_token() -> str:
+    """Create a valid HS256 JWT signed with the shared test secret."""
+    now = datetime.now(timezone.utc)
+    claims: dict[str, Any] = {
+        NAMEID_URI: "user-abc-123",
+        ROLE_URI: 1,
+        BUSINESS_CLAIM: "biz-001",
+        "iss": "http://localhost",
+        "aud": "http://localhost",
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(hours=1)).timestamp()),
+    }
+    return jwt.encode(claims, TEST_SECRET, algorithm="HS256")
 
 
 def _setup(
@@ -36,6 +60,43 @@ def _client() -> AsyncClient:
 
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://test")
+
+
+@pytest.mark.asyncio
+async def test_get_voices_jwt_enforced_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GET /api/voices honors JWT enforcement (contract under enforced mode).
+
+    Without a Bearer token -> 401. With a valid HS256 token -> 200 + 7 voices.
+    The suite-wide autouse fixture disables enforcement, so this test sets
+    enforcement explicitly (mirroring the auth-guard test pattern).
+    """
+    _setup(tmp_path, monkeypatch)
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "JWT_SHARED_SECRET", TEST_SECRET)
+    monkeypatch.setattr(settings, "JWT_ISSUER", "http://localhost")
+    monkeypatch.setattr(settings, "JWT_AUDIENCE", "http://localhost")
+    monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
+    monkeypatch.setattr(settings, "JWT_ALLOWED_ROLES", [1, 2, 3])
+    monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", True)
+
+    async with _client() as client:
+        # No token -> 401 unauthorized
+        no_token = await client.get("/api/voices")
+        assert no_token.status_code == 401
+        assert no_token.json()["error"] == "unauthorized"
+
+        # Valid HS256 token -> 200 with 7 voices
+        token = _make_hs256_token()
+        ok = await client.get(
+            "/api/voices",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert ok.status_code == 200
+        assert len(ok.json()) == 7
 
 
 @pytest.mark.asyncio

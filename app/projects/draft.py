@@ -33,20 +33,37 @@ def normalize_draft(result: LyricsResult) -> LyricsResult:
     Raises:
         LyricsGenerationError: If total lines after stripping are < 10.
     """
-    verses = [Verse(number=v.number, lines=_strip_lines(v.lines)) for v in result.verses]
-    chorus = Chorus(lines=_strip_lines(result.chorus.lines))
-    bridge = Bridge(lines=_strip_lines(result.bridge.lines)) if result.bridge is not None else None
+    # Filter out sections whose lines are all empty after stripping. A verse or
+    # bridge that strips to zero lines would violate the output schema's
+    # min_length=1 and leak a pydantic ValidationError -> 422, which violates
+    # the documented invalid-draft -> 503 contract. Chorus is structurally
+    # required, so an empty chorus is a degenerate draft -> LyricsGenerationError.
+    verses = [
+        Verse(number=v.number, lines=lines)
+        for v in result.verses
+        if (lines := _strip_lines(v.lines))
+    ]
 
-    total = sum(len(v.lines) for v in verses) + len(chorus.lines)
+    chorus_lines = _strip_lines(result.chorus.lines)
+    if not chorus_lines:
+        raise LyricsGenerationError("Generated draft has an empty chorus")
+
+    bridge_lines = _strip_lines(result.bridge.lines) if result.bridge is not None else []
+    bridge = Bridge(lines=bridge_lines) if bridge_lines else None
+
+    if not verses:
+        raise LyricsGenerationError("Generated draft has no non-empty verses")
+
+    total = sum(len(v.lines) for v in verses) + len(chorus_lines)
     if bridge is not None:
-        total += len(bridge.lines)
+        total += len(bridge_lines)
 
     if total < 10:
         raise LyricsGenerationError(f"Generated draft is too short ({total} lines, minimum 10)")
 
     return LyricsResult(
         verses=verses,
-        chorus=chorus,
+        chorus=Chorus(lines=chorus_lines),
         bridge=bridge,
         language="es",
         title_suggestion=result.title_suggestion,

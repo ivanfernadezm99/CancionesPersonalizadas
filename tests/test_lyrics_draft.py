@@ -192,3 +192,54 @@ async def test_lyrics_draft_short_draft_503(
             )
 
         assert resp.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_lyrics_draft_empty_verse_is_dropped_not_422(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A draft with an all-whitespace verse must NOT 422 (RQ-DRAFT-03 contract).
+
+    The empty verse is dropped server-side and the endpoint returns 200 with the
+    remaining sections, not a pydantic ValidationError surfaced as 422.
+    """
+    _setup(tmp_path, monkeypatch)
+    async with _client() as client:
+        create_resp = await client.post(
+            "/api/projects",
+            json={
+                "recipient": "María",
+                "relationship": "pareja",
+                "genre": "bachata",
+                "mood": "romántica",
+                "voice": "female",
+            },
+        )
+        project_id = create_resp.json()["id"]
+
+        result_with_empty_verse = LyricsResult(
+            verses=[
+                {"number": 1, "lines": ["", "   ", "  "]},
+                {"number": 2, "lines": ["v2 a", "v2 b", "v2 c", "v2 d"]},
+            ],
+            chorus={"lines": ["c1", "c2", "c3", "c4"]},
+            bridge={"lines": ["b1", "b2"]},
+            language="es",
+            title_suggestion="Gracias",
+            provider="mock",
+        )
+
+        with patch(
+            "app.projects.router.lyrics_generate",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            mock_gen.return_value = result_with_empty_verse
+            resp = await client.post(
+                f"/api/projects/{project_id}/lyrics-draft",
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # The empty verse (number 1) is dropped; only verse 2 remains.
+        assert [v["number"] for v in data["verses"]] == [2]
