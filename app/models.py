@@ -120,6 +120,15 @@ class StoryFragmentAdd(BaseModel):
     text: str = Field(..., min_length=1, max_length=2000, description="Story fragment to accumulate")
 
 
+class ReplaceFragmentsRequest(BaseModel):
+    """Replace the full story fragment list of a project."""
+
+    fragments: list[str] = Field(
+        default_factory=list,
+        description="Complete story fragment list, replacing any existing fragments",
+    )
+
+
 class SongProjectUpdate(BaseModel):
     """Update project settings or add a story fragment."""
 
