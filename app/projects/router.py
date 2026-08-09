@@ -18,6 +18,7 @@ from app.models import (
     AudioReferenceResponse,
     CheckoutResponse,
     JobCreateResponse,
+    ReplaceFragmentsRequest,
     SongProjectCreate,
     SongProjectResponse,
     SongProjectUpdate,
@@ -115,6 +116,51 @@ async def update_project(
 
     project = await store.get_project(project_id, db_path=settings.DB_PATH)
     assert project is not None  # just updated
+    return _project_to_response(project)
+
+
+COMPLETED_STATUSES = frozenset({"paid", "completed"})
+
+
+@router.put("/{project_id}/fragments")
+async def replace_fragments(
+    project_id: str, data: ReplaceFragmentsRequest,
+) -> SongProjectResponse:
+    """Replace the full story fragment list of a project.
+
+    Returns 409 Conflict if the project is already paid or completed.
+    """
+    from app.config import settings
+
+    project = await store.get_project(project_id, db_path=settings.DB_PATH)
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "project_not_found", "project_id": project_id},
+        )
+
+    if project["status"] in COMPLETED_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "project_locked",
+                "message": "Fragments cannot be replaced once the project is paid or completed",
+                "project_id": project_id,
+                "current_status": project["status"],
+            },
+        )
+
+    found = await store.replace_fragments(
+        project_id, data.fragments, db_path=settings.DB_PATH,
+    )
+    if not found:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "project_not_found", "project_id": project_id},
+        )
+
+    project = await store.get_project(project_id, db_path=settings.DB_PATH)
+    assert project is not None  # just replaced
     return _project_to_response(project)
 
 

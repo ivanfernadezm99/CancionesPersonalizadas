@@ -278,6 +278,52 @@ async def update_project(
         await conn.close()
 
 
+async def replace_fragments(
+    project_id: str, fragments: list[str], *, db_path: str,
+) -> bool:
+    """Replace the full story fragment list for a project in a transaction.
+
+    Returns True if the project exists, False otherwise.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    conn = await _get_conn(db_path)
+    try:
+        await init_schema(db_path, conn=conn)
+
+        # Check exists and replace atomically in a single transaction.
+        # NOTE: aiosqlite's `async with conn:` closes the connection on exit,
+        # so use an explicit BEGIN/COMMIT/ROLLBACK instead.
+        await conn.execute("BEGIN IMMEDIATE")
+        try:
+            cursor = await conn.execute(
+                "SELECT id FROM projects WHERE id = ?", (project_id,),
+            )
+            if await cursor.fetchone() is None:
+                await conn.rollback()
+                return False
+
+            await conn.execute(
+                "DELETE FROM story_fragments WHERE project_id = ?", (project_id,),
+            )
+            for idx, fragment in enumerate(fragments, start=1):
+                await conn.execute(
+                    """INSERT INTO story_fragments (project_id, fragment, sort_order, created_at)
+                       VALUES (?, ?, ?, ?)""",
+                    (project_id, fragment, idx, now),
+                )
+            await conn.execute(
+                "UPDATE projects SET updated_at = ? WHERE id = ?",
+                (now, project_id),
+            )
+            await conn.commit()
+        except BaseException:
+            await conn.rollback()
+            raise
+        return True
+    finally:
+        await conn.close()
+
+
 async def link_project_job(
     project_id: str, job_id: str, job_type: str, *, db_path: str,
 ) -> None:

@@ -28,6 +28,21 @@ logger = logging.getLogger(__name__)
 PREVIEW_MODEL = "google/lyria-3-clip-preview"
 FINAL_MODEL = "google/lyria-3-pro-preview"
 
+# Legacy voice values stored before the 7-voice registry (RQ-VOI-01).
+# These are normalized at read time so rebuilding a GenerateRequest from an
+# old project row never raises ValidationError->500 (T7/T8).
+_LEGACY_VOICE_MAP: dict[str, str] = {
+    "duo": "female",
+    "children": "es-espana-child",
+}
+
+
+def _normalize_voice(voice: str | None) -> str:
+    """Map a stored (possibly legacy) voice to a valid registry voice."""
+    if voice is None:
+        return "female"
+    return _LEGACY_VOICE_MAP.get(voice, voice)
+
 
 async def create_project(data: SongProjectCreate) -> str:
     """Create a new song project and return its ID.
@@ -73,7 +88,7 @@ async def create_preview_job(project_id: str) -> JobCreateResponse:
         genre=project["genre"],
         mood=project["mood"],
         story=story[:2000] if story else None,
-        voice=project["voice"],
+        voice=_normalize_voice(project["voice"]),
     )
 
     metadata = {
@@ -139,7 +154,7 @@ async def create_final_job(project_id: str) -> JobCreateResponse:
         genre=project["genre"],
         mood=project["mood"],
         story=story[:2000] if story else None,
-        voice=project["voice"],
+        voice=_normalize_voice(project["voice"]),
     )
 
     chaining_enabled = bool(project.get("chaining_enabled", False))

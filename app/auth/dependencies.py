@@ -27,6 +27,7 @@ def requires_role(*allowed_roles: int) -> Callable[[Callable[..., Any]], Callabl
 
     This is a SECONDARY check on top of the base middleware role filtering.
     """
+
     def decorator(endpoint: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(endpoint)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:

@@ -25,6 +25,7 @@ from app.jobs.worker import job_worker
 from app.models import GenerateRequest, JobCreateResponse, JobStatusResponse
 from app.stream.router import router as stream_router
 from app.voice.registry import validate_registry
+from app.voice.router import router as voice_router
 
 logger = logging.getLogger(__name__)
 
@@ -250,3 +251,4 @@ app.include_router(auth_router)
 app.include_router(stream_router)
 app.include_router(projects_router)
 app.include_router(webhook_router)
+app.include_router(voice_router)

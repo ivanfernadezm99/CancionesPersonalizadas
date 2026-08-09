@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter
-from jose.exceptions import JWTError
 
 from app.auth import get_jwks_fetcher
 

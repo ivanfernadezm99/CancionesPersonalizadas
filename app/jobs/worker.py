@@ -40,6 +40,9 @@ async def job_worker(job_id: str) -> None:
         params_dict = json.loads(job["params"])
         params = GenerateRequest(**params_dict)
 
+        ref_song = getattr(params, "reference_song", None)
+        ref_desc = getattr(params, "reference_description", None)
+
         # 2. Lyrics generation
         await update_status(
             job_id, "lyrics_generating", progress=0.2, db_path=settings.DB_PATH,
@@ -53,6 +56,8 @@ async def job_worker(job_id: str) -> None:
             genre=params.genre,
             mood=params.mood,
             story=params.story,
+            reference_song=ref_desc or ref_song,
+            reference_description=ref_desc,
         )
 
         # Format lyrics text with markers for music generation
@@ -68,6 +73,8 @@ async def job_worker(job_id: str) -> None:
             voice_id=params.voice,
             genre=params.genre,
             mood=params.mood,
+            reference_description=ref_desc,
+            reference_song=ref_song,
         )
 
         generated_path = await music_generate(
@@ -94,6 +101,8 @@ async def job_worker(job_id: str) -> None:
             "duration_extended": extended,
             "lyrics_provider": lyrics_result.provider,
             "title_suggestion": lyrics_result.title_suggestion,
+            "reference_song": ref_song,
+            "reference_description": ref_desc,
         }
 
         await update_status(

@@ -1,92 +1,54 @@
-"""Tests for JWT authentication middleware and JWKS fetcher.
+"""Tests for JWT authentication middleware (HS256 shared secret).
 
 Tests are organized by scenario:
-- Valid token → 200 on protected endpoints
+- Valid token → 200/404 on protected endpoints
 - Expired token → 401
-- Malformed token → 401
+- Malformed/tampered token → 401
 - No token → 401
-- JWKS endpoint down → 503
 - Role forbidden → 403
-- Permissive mode → 200 even with invalid token
-- Public endpoints → 200 with no token
+- Permissive mode → passthrough
+- Public endpoints + webhook → 200 without token
+- HS256KeyProvider unit tests
 """
 
 from __future__ import annotations
 
-import json
-import time
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 import pytest
-import respx
-from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Request
 from httpx import ASGITransport, AsyncClient
-from jose import jwk, jwt
-from jose.constants import Algorithms
+from jose import jwt
 
-from app.auth import JWKSFetcher
+from app.auth import HS256KeyProvider
 
-# ── Test key generation ───────────────────────────────────────────────────────
+NAMEID_URI = "http://schemas.microsoft.com/ws/2008/06/identity/claims/nameidentifier"
+ROLE_URI = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+BUSINESS_CLAIM = "BusinessId"
 
-# Shared RSA key pair for all tests in this module
-_TEST_PRIVATE_KEY: rsa.RSAPrivateKey | None = None
-_TEST_JWK_PRIVATE: Any = None
-_TEST_JWK_PUBLIC: Any = None
-_TEST_JWKS: dict[str, Any] | None = None
-
-
-def _ensure_keys() -> None:
-    """Generate RSA key pair once per test session."""
-    global _TEST_PRIVATE_KEY, _TEST_JWK_PRIVATE, _TEST_JWK_PUBLIC, _TEST_JWKS
-    if _TEST_PRIVATE_KEY is not None:
-        return
-
-    # Generate using cryptography
-    _TEST_PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    public_key = _TEST_PRIVATE_KEY.public_key()
-
-    # Wrap in jose RSAKey instances for signing/verification
-    from jose.backends.cryptography_backend import CryptographyRSAKey
-
-    _TEST_JWK_PUBLIC = CryptographyRSAKey(public_key, algorithm="RS256")
-    _TEST_JWK_PRIVATE = CryptographyRSAKey(_TEST_PRIVATE_KEY, algorithm="RS256")
-
-    # Build JWKS from public key
-    pub_dict = _TEST_JWK_PUBLIC.to_dict()
-    pub_dict["kid"] = "test-key-001"
-    pub_dict["alg"] = "RS256"
-    pub_dict["use"] = "sig"
-    _TEST_JWKS = {"keys": [pub_dict]}
-
-
-def _get_jwks() -> dict[str, Any]:
-    """Return the JWKS response dict."""
-    _ensure_keys()
-    return _TEST_JWKS  # type: ignore[return-value]
+TEST_SECRET = "test-shared-secret-0123456789abcdef"
 
 
 def _create_token(
     *,
-    sub: str = "user-abc-123",
+    user_id: str = "user-abc-123",
     role: int = 1,
     business_id: str = "biz-001",
-    issuer: str = "pos-backend",
-    audience: str = "canciones-personalizadas",
+    issuer: str = "http://localhost",
+    audience: str = "http://localhost",
     expire_offset: int = 3600,
     extra_claims: dict[str, Any] | None = None,
 ) -> str:
-    """Create a signed JWT for testing."""
-    _ensure_keys()
+    """Create a signed HS256 JWT for testing."""
     now = datetime.now(timezone.utc)
 
     claims: dict[str, Any] = {
-        "sub": sub,
-        "role": role,
-        "business_id": business_id,
+        NAMEID_URI: user_id,
+        ROLE_URI: role,
+        BUSINESS_CLAIM: business_id,
         "iss": issuer,
         "aud": audience,
         "iat": int(now.timestamp()),
@@ -95,105 +57,58 @@ def _create_token(
     if extra_claims:
         claims.update(extra_claims)
 
-    return jwt.encode(
-        claims,
-        _TEST_JWK_PRIVATE,
-        algorithm=Algorithms.RS256,
-        headers={"kid": "test-key-001"},
-    )
+    return jwt.encode(claims, TEST_SECRET, algorithm="HS256")
 
 
-# ── JWKS endpoint mocker ──────────────────────────────────────────────────────
+def _configure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    enforced: bool,
+) -> None:
+    """Apply shared test settings + JWT config for the test app."""
+    from app.config import settings
 
-
-@pytest.fixture
-def jwks_endpoint() -> str:
-    """Return the JWKS endpoint URL used in tests."""
-    return "http://test-jwks/api/auth/jwks"
-
-
-@pytest.fixture
-def mock_jwks(
-    jwks_endpoint: str,
-) -> respx.MockRouter:
-    """Mock the JWKS endpoint with a valid JWKS response.
-
-    Returns an unstarted MockRouter — the caller starts it via ``with mock_jwks:``.
-    """
-    router = respx.mock(base_url=jwks_endpoint, assert_all_called=False)
-    router.get("/").respond(200, json=_get_jwks())
-    return router
-
-
-# ── Test app fixture (enforced mode) ──────────────────────────────────────────
+    monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setattr(settings, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
+    monkeypatch.setattr(settings, "JWT_SHARED_SECRET", TEST_SECRET)
+    monkeypatch.setattr(settings, "JWT_ISSUER", "http://localhost")
+    monkeypatch.setattr(settings, "JWT_AUDIENCE", "http://localhost")
+    monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
+    monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", enforced)
+    monkeypatch.setattr(settings, "JWT_ALLOWED_ROLES", [1, 2, 3])
+    monkeypatch.setattr("app.main._active_requests", 0)
 
 
 @pytest.fixture
 async def auth_test_app(
     tmp_path: Path,
-    mock_jwks: respx.MockRouter,
     monkeypatch: pytest.MonkeyPatch,
-    jwks_endpoint: str,
 ) -> AsyncIterator[AsyncClient]:
-    """Create a FastAPI TestClient with enforce-mode auth config."""
-    from app.config import settings
-
-    monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
-    monkeypatch.setattr(settings, "OUTPUT_DIR", str(tmp_path / "output"))
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
-    monkeypatch.setattr(settings, "JWT_JWKS_URL", jwks_endpoint)
-    monkeypatch.setattr(settings, "JWT_ISSUER", "pos-backend")
-    monkeypatch.setattr(settings, "JWT_AUDIENCE", "canciones-personalizadas")
-    monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", True)
-    monkeypatch.setattr(settings, "JWT_ALLOWED_ROLES", [1, 2, 3])
-
-    # Reset the JWKS fetcher singleton so it picks up the new URL
-    from app.auth import _jwks_fetcher
-
-    monkeypatch.setattr("app.auth._jwks_fetcher", None)
-    monkeypatch.setattr("app.main._active_requests", 0)
+    """FastAPI TestClient with enforce-mode auth config (HS256)."""
+    _configure(monkeypatch, tmp_path, enforced=True)
 
     from app.main import app
 
     transport = ASGITransport(app=app)
-    with mock_jwks:
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            yield client
-
-
-# ── Auth test app (permissive mode) ───────────────────────────────────────────
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
 
 
 @pytest.fixture
 async def permissive_auth_test_app(
     tmp_path: Path,
-    mock_jwks: respx.MockRouter,
     monkeypatch: pytest.MonkeyPatch,
-    jwks_endpoint: str,
 ) -> AsyncIterator[AsyncClient]:
-    """Same as auth_test_app but with JWT_AUTH_ENFORCED=False."""
-    from app.config import settings
-
-    monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
-    monkeypatch.setattr(settings, "OUTPUT_DIR", str(tmp_path / "output"))
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
-    monkeypatch.setattr(settings, "JWT_JWKS_URL", jwks_endpoint)
-    monkeypatch.setattr(settings, "JWT_ISSUER", "pos-backend")
-    monkeypatch.setattr(settings, "JWT_AUDIENCE", "canciones-personalizadas")
-    monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", False)
-    monkeypatch.setattr(settings, "JWT_ALLOWED_ROLES", [1, 2, 3])
-
-    from app.auth import _jwks_fetcher
-
-    monkeypatch.setattr("app.auth._jwks_fetcher", None)
-    monkeypatch.setattr("app.main._active_requests", 0)
+    """FastAPI TestClient with JWT_AUTH_ENFORCED=False (HS256)."""
+    _configure(monkeypatch, tmp_path, enforced=False)
 
     from app.main import app
 
     transport = ASGITransport(app=app)
-    with mock_jwks:
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            yield client
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
@@ -230,7 +145,7 @@ class TestRootEndpoint:
 
 
 class TestValidToken:
-    """Tests with a valid JWT token."""
+    """Tests with a valid HS256 JWT token."""
 
     @pytest.mark.asyncio
     async def test_valid_token_on_status(
@@ -249,7 +164,7 @@ class TestValidToken:
 
     @pytest.mark.asyncio
     async def test_valid_token_injects_state(
-        self, auth_test_app: AsyncClient,
+        self, auth_test_app: AsyncClient,  # noqa: ARG002
     ) -> None:
         """Valid token should inject user_id, role_id, business_id into request.state."""
         from app.main import app
@@ -263,7 +178,7 @@ class TestValidToken:
             captured["business_id"] = request.state.business_id
             return {"ok": True}
 
-        token = _create_token(sub="test-user", role=2, business_id="biz-xyz")
+        token = _create_token(user_id="test-user", role=2, business_id="biz-xyz")
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get(
@@ -321,23 +236,23 @@ class TestMalformedToken:
         assert response.status_code == 401, response.text
 
     @pytest.mark.asyncio
-    async def test_token_without_kid_returns_401(
+    async def test_wrong_secret_returns_401(
         self, auth_test_app: AsyncClient,
     ) -> None:
-        """Token without kid header should return 401."""
-        _ensure_keys()
-        claims = {
-            "sub": "user-1",
-            "role": 1,
-            "iss": "pos-backend",
-            "aud": "canciones-personalizadas",
-            "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+        """Token signed with a different secret should return 401."""
+        now = datetime.now(timezone.utc)
+        claims: dict[str, Any] = {
+            NAMEID_URI: "user-1",
+            ROLE_URI: 1,
+            "iss": "http://localhost",
+            "aud": "http://localhost",
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(hours=1)).timestamp()),
         }
-        # Encode without kid header
-        token = jwt.encode(claims, _TEST_JWK_PRIVATE, algorithm=Algorithms.RS256)
+        bad_token = jwt.encode(claims, "a-different-secret", algorithm="HS256")
         response = await auth_test_app.get(
             "/api/status/nonexistent",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {bad_token}"},
         )
         assert response.status_code == 401, response.text
 
@@ -363,41 +278,6 @@ class TestNoToken:
             headers={"Authorization": "Basic dGVzdDp0ZXN0"},
         )
         assert response.status_code == 401, response.text
-
-
-class TestJWKSDown:
-    """Tests when JWKS endpoint is unreachable."""
-
-    @pytest.mark.asyncio
-    async def test_jwks_down_returns_503(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """When JWKS endpoint is unreachable, protected endpoints return 503."""
-        from app.config import settings
-
-        monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
-        monkeypatch.setattr(settings, "OUTPUT_DIR", str(tmp_path / "output"))
-        monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
-        monkeypatch.setattr(settings, "JWT_JWKS_URL", "http://localhost:1/unreachable")
-        monkeypatch.setattr(settings, "JWT_ISSUER", "pos-backend")
-        monkeypatch.setattr(settings, "JWT_AUDIENCE", "canciones-personalizadas")
-        monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", True)
-
-        from app.auth import _jwks_fetcher
-
-        monkeypatch.setattr("app.auth._jwks_fetcher", None)
-        monkeypatch.setattr("app.main._active_requests", 0)
-
-        from app.main import app
-
-        token = _create_token()
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.get(
-                "/api/status/nonexistent",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            assert response.status_code == 503, response.text
 
 
 class TestRoleForbidden:
@@ -496,57 +376,72 @@ class TestPublicEndpoints:
         assert response.status_code == 200
 
 
-class TestJWKSFetcherUnit:
-    """Unit tests for the JWKSFetcher class."""
+class TestWebhookExempt:
+    """The payment webhook is exempt from JWT auth (uses its own secret)."""
 
     @pytest.mark.asyncio
-    async def test_get_public_key_valid(
-        self, jwks_endpoint: str, mock_jwks: respx.MockRouter,
+    async def test_webhook_requires_no_bearer(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """get_public_key should return a key for a known kid."""
-        with mock_jwks:
-            fetcher = JWKSFetcher(jwks_url=jwks_endpoint)
-            key = await fetcher.get_public_key("test-key-001")
-            assert key is not None
+        """Webhook with valid X-Webhook-Secret and no Bearer reaches the handler."""
+        from app.config import settings
+
+        _configure(monkeypatch, tmp_path, enforced=True)
+        monkeypatch.setattr(settings, "PAYMENT_WEBHOOK_SECRET", "test-webhook-secret")
+
+        from app.main import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/webhooks/payment-confirmed",
+                json={"project_id": "missing", "payment_id": "p1", "status": "approved"},
+                headers={"X-Webhook-Secret": "test-webhook-secret"},
+            )
+            # 404 project_not_found proves auth was bypassed (reached handler)
+            assert response.status_code == 404, response.text
+            assert response.json()["error"] == "project_not_found"
 
     @pytest.mark.asyncio
-    async def test_get_public_key_unknown_kid(
-        self, jwks_endpoint: str, mock_jwks: respx.MockRouter,
+    async def test_webhook_invalid_secret_returns_401(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """get_public_key should return None for an unknown kid."""
-        with mock_jwks:
-            fetcher = JWKSFetcher(jwks_url=jwks_endpoint)
-            key = await fetcher.get_public_key("unknown-kid")
-            assert key is None
+        """Webhook with wrong X-Webhook-Secret returns 401 invalid_webhook_secret."""
+        from app.config import settings
 
-    @pytest.mark.asyncio
-    async def test_jwks_endpoint_down(
-        self, jwks_endpoint: str,
-    ) -> None:
-        """When JWKS endpoint is unreachable, get_public_key should raise."""
-        fetcher = JWKSFetcher(jwks_url="http://localhost:1/bad")
-        with pytest.raises(Exception):
-            await fetcher.get_public_key("test-key-001")
+        _configure(monkeypatch, tmp_path, enforced=True)
+        monkeypatch.setattr(settings, "PAYMENT_WEBHOOK_SECRET", "test-webhook-secret")
 
-    @pytest.mark.asyncio
-    async def test_cache_ttl(
-        self, jwks_endpoint: str, mock_jwks: respx.MockRouter,
-    ) -> None:
-        """The fetcher should cache keys and not re-fetch before TTL."""
-        with mock_jwks:
-            fetcher = JWKSFetcher(jwks_url=jwks_endpoint, ttl=3600)
-            key1 = await fetcher.get_public_key("test-key-001")
-            assert key1 is not None
-            key2 = await fetcher.get_public_key("test-key-001")
-            assert key2 is not None
+        from app.main import app
 
-    @pytest.mark.asyncio
-    async def test_healthy_property(
-        self, jwks_endpoint: str, mock_jwks: respx.MockRouter,
-    ) -> None:
-        """healthy property should reflect JWKS endpoint status."""
-        with mock_jwks:
-            fetcher = JWKSFetcher(jwks_url=jwks_endpoint)
-            assert fetcher.healthy is True
-            await fetcher.get_public_key("test-key-001")
-            assert fetcher.healthy is True
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/webhooks/payment-confirmed",
+                json={"project_id": "missing", "payment_id": "p1", "status": "approved"},
+                headers={"X-Webhook-Secret": "wrong-secret"},
+            )
+            assert response.status_code == 401, response.text
+            assert response.json()["error"] == "invalid_webhook_secret"
+
+
+class TestHS256KeyProviderUnit:
+    """Unit tests for the HS256KeyProvider class."""
+
+    def test_secret_returns_configured_secret(self) -> None:
+        """secret should return the configured shared secret."""
+        provider = HS256KeyProvider(secret="abc")
+        assert provider.secret == "abc"
+
+    def test_healthy_true_when_secret_configured(self) -> None:
+        """healthy should be True when a secret is configured."""
+        provider = HS256KeyProvider(secret="abc")
+        assert provider.healthy is True
+
+    def test_healthy_false_when_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """healthy should be False when no secret configured."""
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "JWT_SHARED_SECRET", "")
+        provider = HS256KeyProvider()
+        assert provider.healthy is False
