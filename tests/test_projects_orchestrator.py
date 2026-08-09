@@ -242,6 +242,91 @@ class TestProjectWorker:
             settings.OUTPUT_DIR = original_output
 
     @pytest.mark.asyncio
+    async def test_worker_preview_reaches_complete(
+        self, tmp_path: Path,
+    ) -> None:
+        """Preview jobs must reach 'complete' (regression: standard path skipped
+        the 'processing' status transition, so the state machine rejected
+        music_generating → complete and the job silently failed)."""
+        from app.jobs.store import get_connection, init_db
+        from app.projects import project_worker
+        from app.config import settings
+
+        original_db = settings.DB_PATH
+        original_output = settings.OUTPUT_DIR
+        try:
+            settings.DB_PATH = str(tmp_path / "jobs.db")
+            settings.OUTPUT_DIR = str(tmp_path / "output")
+
+            conn = await get_connection(settings.DB_PATH)
+            await init_db(conn)
+            now = "2024-01-01T00:00:00"
+            await conn.execute(
+                """INSERT INTO jobs (job_id, status, params, progress, metadata,
+                                     created_at, updated_at)
+                   VALUES (?, 'queued', ?, 0.0, ?, ?, ?)""",
+                (
+                    "worker-preview-complete",
+                    json.dumps({
+                        "recipient": "María", "relationship": "pareja",
+                        "occasion": "personalizada", "genre": "bachata",
+                        "mood": "romántica", "voice": "female",
+                    }),
+                    json.dumps({
+                        "project_id": "proj-1",
+                        "model": "google/lyria-3-clip-preview",
+                        "duration_target": 30,
+                        "reference_song": None,
+                        "job_type": "preview",
+                    }),
+                    now, now,
+                ),
+            )
+            await conn.commit()
+            await conn.close()
+
+            with patch("app.projects.lyrics_generate", new_callable=AsyncMock) as mock_lyrics, \
+                 patch("app.projects.build_prompt", return_value="voice prompt"), \
+                 patch("app.projects.music_generate", new_callable=AsyncMock) as mock_music, \
+                 patch("app.projects._format_lyrics_for_music", return_value="[Verse 1]\nlyrics"), \
+                 patch("app.projects.extend_duration") as mock_extend:
+
+                from app.models import LyricsResult
+                mock_lyrics.return_value = LyricsResult(
+                    verses=[{"number": 1, "lines": ["a", "b", "c", "d"]}],
+                    chorus={"lines": ["e", "f", "g", "h"]},
+                    title_suggestion="Test",
+                    provider="openai",
+                )
+
+                out_dir = Path(settings.OUTPUT_DIR) / "worker-preview-complete"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                (out_dir / "generated.mp3").write_bytes(b"MP3")
+                mock_music.return_value = out_dir / "generated.mp3"
+
+                await project_worker("worker-preview-complete")
+
+                # Preview must still emit the processing transition (state machine
+                # requires it before complete) but must NOT extend duration.
+                mock_extend.assert_not_called()
+
+            conn = await get_connection(settings.DB_PATH)
+            cursor = await conn.execute(
+                "SELECT status, error FROM jobs WHERE job_id = 'worker-preview-complete'",
+            )
+            row = await cursor.fetchone()
+            await conn.close()
+
+            assert row is not None
+            assert row["status"] == "complete", (
+                f"preview job should complete, got status={row['status']!r} "
+                f"error={row['error']!r}"
+            )
+        finally:
+            settings.DB_PATH = original_db
+            settings.OUTPUT_DIR = original_output
+
+    @pytest.mark.asyncio
     async def test_worker_dispatches_final_model_with_duration_extension(
         self, tmp_path: Path,
     ) -> None:

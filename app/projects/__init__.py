@@ -308,11 +308,12 @@ async def project_worker(job_id: str) -> None:
                 reference_audio=reference_audio_url,
             )
 
-            # 3. Processing (duration extension — skip for previews)
+            # 3. Processing — the status transition is required by the state
+            # machine before complete; duration extension only for final songs.
+            await update_status(
+                job_id, "processing", progress=0.8, db_path=settings.DB_PATH,
+            )
             if job_type != "preview" and duration_target:
-                await update_status(
-                    job_id, "processing", progress=0.8, db_path=settings.DB_PATH,
-                )
                 logger.info(
                     "Project worker: extending duration for job %s (target=%ss)",
                     job_id, duration_target,
