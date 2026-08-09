@@ -297,3 +297,124 @@ class TestLegacyVoiceNormalization:
             assert job.status == "queued"
         finally:
             settings.DB_PATH = original_db
+
+    @pytest.mark.asyncio
+    async def test_create_preview_job_threads_idea_into_params(
+        self, tmp_path: Path,
+    ) -> None:
+        """create_preview_job should pass idea=project['idea'] into GenerateRequest (T20/T21)."""
+        import uuid
+
+        import aiosqlite
+
+        from app.config import settings
+        from app.jobs import get_job
+        from app.projects import create_preview_job
+        from app.projects import store as project_store
+
+        db_path = str(tmp_path / "projects.db")
+        original_db = settings.DB_PATH
+        try:
+            settings.DB_PATH = db_path
+            await project_store.init_schema(db_path)
+            project_id = str(uuid.uuid4())
+            now = "2026-01-01T00:00:00+00:00"
+            conn = await aiosqlite.connect(db_path)
+            await conn.execute(
+                """INSERT INTO projects (id, recipient, relationship, genre, mood,
+                                          voice, idea, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)""",
+                (project_id, "María", "pareja", "bachata", "romántica", "female",
+                 "canción para mi madre", now, now),
+            )
+            await conn.execute(
+                "INSERT INTO story_fragments (project_id, fragment, sort_order, created_at) VALUES (?, ?, 1, ?)",
+                (project_id, "Un recuerdo", now),
+            )
+            await conn.commit()
+            await conn.close()
+
+            with patch("app.projects.project_worker", new_callable=AsyncMock):
+                job = await create_preview_job(project_id)
+
+            stored = await get_job(job.job_id, db_path=db_path)
+            assert stored is not None
+            params = json.loads(stored["params"])
+            assert params["idea"] == "canción para mi madre"
+        finally:
+            settings.DB_PATH = original_db
+
+    @pytest.mark.asyncio
+    async def test_project_worker_passes_idea_to_lyrics_generate(
+        self, tmp_path: Path,
+    ) -> None:
+        """project_worker should pass params.idea into lyrics_generate (T21)."""
+        from app.config import settings
+        from app.models import LyricsResult
+        from app.projects import create_final_job, project_worker
+        from app.projects import store as project_store
+
+        import uuid
+
+        import aiosqlite
+
+        db_path = str(tmp_path / "projects.db")
+        out_dir = tmp_path / "output"
+        out_dir.mkdir(exist_ok=True)
+        original_db = settings.DB_PATH
+        original_output = settings.OUTPUT_DIR
+        try:
+            settings.DB_PATH = db_path
+            settings.OUTPUT_DIR = str(out_dir)
+            await project_store.init_schema(db_path)
+            project_id = str(uuid.uuid4())
+            now = "2026-01-01T00:00:00+00:00"
+            conn = await aiosqlite.connect(db_path)
+            await conn.execute(
+                """INSERT INTO projects (id, recipient, relationship, genre, mood,
+                                          voice, idea, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'paid', ?, ?)""",
+                (project_id, "María", "pareja", "bachata", "romántica", "female",
+                 "canción de agradecimiento", now, now),
+            )
+            await conn.execute(
+                "INSERT INTO story_fragments (project_id, fragment, sort_order, created_at) VALUES (?, ?, 1, ?)",
+                (project_id, "Un recuerdo especial", now),
+            )
+            await conn.commit()
+            await conn.close()
+
+            with patch("app.projects.project_worker", new_callable=AsyncMock):
+                job = await create_final_job(project_id)
+
+            job_dir = Path(settings.OUTPUT_DIR) / job.job_id
+            job_dir.mkdir(parents=True, exist_ok=True)
+
+            from app.music.durext import ExtendResult
+
+            with (
+                patch("app.projects.lyrics_generate", new_callable=AsyncMock) as mock_lyrics,
+                patch("app.projects.build_prompt", return_value="prompt") as mock_prompt,
+                patch("app.projects.music_generate", new_callable=AsyncMock) as mock_music,
+                patch("app.projects.extend_duration") as mock_extend,
+            ):
+                mock_lyrics.return_value = LyricsResult(
+                    verses=[{"number": 1, "lines": ["a", "b", "c", "d"]}],
+                    chorus={"lines": ["e", "f", "g", "h"]},
+                    title_suggestion="Título",
+                    provider="mock",
+                )
+                mock_music.return_value = job_dir / "generated.mp3"
+                (job_dir / "generated.mp3").write_bytes(b"MP3")
+                mock_extend.return_value = ExtendResult(
+                    path=job_dir / "final.mp3", extended=True,
+                )
+                mock_prompt.return_value = "prompt"
+
+                await project_worker(job.job_id)
+
+            _, kwargs = mock_lyrics.call_args
+            assert kwargs["idea"] == "canción de agradecimiento"
+        finally:
+            settings.DB_PATH = original_db
+            settings.OUTPUT_DIR = original_output

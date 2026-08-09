@@ -38,7 +38,9 @@ class GenerateRequest(BaseModel):
     genre: str = Field(..., min_length=1, max_length=50, description="Music genre")
     mood: str = Field(..., min_length=1, max_length=50, description="Song mood")
     story: str | None = Field(None, max_length=2000, description="Optional personal story")
-    voice: str = Field(default="female", min_length=1, max_length=50, description="Voice ID for generation")
+    voice: str = Field(
+        default="female", min_length=1, max_length=50, description="Voice ID for generation"
+    )
     reference_song: str | None = Field(
         None,
         max_length=200,
@@ -48,6 +50,11 @@ class GenerateRequest(BaseModel):
         None,
         max_length=1000,
         description="Auto-generated style description from audio reference",
+    )
+    idea: str | None = Field(
+        None,
+        max_length=2000,
+        description="Optional free-text thematic seed for lyrics (RQ-LYR-07)",
     )
 
     _validate_voice = field_validator("voice")(_validate_voice)
@@ -136,12 +143,23 @@ class SongProjectCreate(BaseModel):
     mood: str = Field(default="romántico", min_length=1, max_length=50)
     voice: str = Field(default="male", min_length=1, max_length=50)
     reference_song: str | None = Field(
-        None, max_length=200, description="Optional reference song for style (e.g. 'Bachata Rosa - Juan Luis Guerra')"
+        None,
+        max_length=200,
+        description="Optional reference song for style (e.g. 'Bachata Rosa - Juan Luis Guerra')",
     )
     reference_description: str | None = Field(
-        None, max_length=1000, description="Auto-generated style description from uploaded audio reference"
+        None,
+        max_length=1000,
+        description="Auto-generated style description from uploaded audio reference",
     )
-    chaining_enabled: bool = Field(default=False, description="Use clip chaining for the final song instead of pro-preview")
+    idea: str | None = Field(
+        None,
+        max_length=2000,
+        description="Optional free-text idea used as a thematic seed for draft lyrics (RQ-IDEA-01)",
+    )
+    chaining_enabled: bool = Field(
+        default=False, description="Use clip chaining for the final song instead of pro-preview"
+    )
 
     _validate_voice = field_validator("voice")(_validate_voice)
 
@@ -149,7 +167,9 @@ class SongProjectCreate(BaseModel):
 class StoryFragmentAdd(BaseModel):
     """Add a story fragment to a project."""
 
-    text: str = Field(..., min_length=1, max_length=2000, description="Story fragment to accumulate")
+    text: str = Field(
+        ..., min_length=1, max_length=2000, description="Story fragment to accumulate"
+    )
 
 
 class ReplaceFragmentsRequest(BaseModel):
@@ -169,7 +189,12 @@ class SongProjectUpdate(BaseModel):
     voice: str | None = Field(None, min_length=1, max_length=50)
     reference_song: str | None = Field(None, max_length=200)
     reference_description: str | None = Field(None, max_length=1000)
-    chaining_enabled: bool | None = Field(None, description="Enable clip chaining for final song generation")
+    idea: str | None = Field(
+        None, max_length=2000, description="Optional free-text idea (RQ-IDEA-01)"
+    )
+    chaining_enabled: bool | None = Field(
+        None, description="Enable clip chaining for final song generation"
+    )
     fragment: StoryFragmentAdd | None = None
 
     _validate_voice = field_validator("voice")(_validate_voice)
@@ -204,6 +229,12 @@ class SongProjectResponse(BaseModel):
     voice: str
     reference_song: str | None
     reference_description: str | None
+    reference_audio_url: str | None = Field(
+        None, description="Public URL of the stored reference audio (Suno Cover mode), if any"
+    )
+    idea: str | None = Field(
+        None, max_length=2000, description="Optional free-text idea (RQ-IDEA-01)"
+    )
     status: str
     fragments: list[StoryFragmentResponse]
     previews: list[ProjectPreview]

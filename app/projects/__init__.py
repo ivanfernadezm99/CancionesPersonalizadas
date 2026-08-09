@@ -89,6 +89,7 @@ async def create_preview_job(project_id: str) -> JobCreateResponse:
         mood=project["mood"],
         story=story[:2000] if story else None,
         voice=_normalize_voice(project["voice"]),
+        idea=project.get("idea"),
     )
 
     metadata = {
@@ -97,6 +98,7 @@ async def create_preview_job(project_id: str) -> JobCreateResponse:
         "duration_target": settings.PREVIEW_TARGET_SECONDS,
         "reference_song": project.get("reference_song"),
         "reference_description": project.get("reference_description"),
+        "idea": project.get("idea"),
         "job_type": "preview",
     }
 
@@ -155,6 +157,7 @@ async def create_final_job(project_id: str) -> JobCreateResponse:
         mood=project["mood"],
         story=story[:2000] if story else None,
         voice=_normalize_voice(project["voice"]),
+        idea=project.get("idea"),
     )
 
     chaining_enabled = bool(project.get("chaining_enabled", False))
@@ -165,6 +168,7 @@ async def create_final_job(project_id: str) -> JobCreateResponse:
         "duration_target": settings.FINAL_TARGET_SECONDS,
         "reference_song": project.get("reference_song"),
         "reference_description": project.get("reference_description"),
+        "idea": project.get("idea"),
         "job_type": "final",
         "chaining_enabled": chaining_enabled,
         "num_clips": settings.MAX_CLIPS if chaining_enabled else None,
@@ -232,6 +236,7 @@ async def project_worker(job_id: str) -> None:
             genre=params.genre,
             mood=params.mood,
             story=params.story,
+            idea=getattr(params, "idea", None),
             reference_song=reference_song,
             reference_description=reference_description,
         )

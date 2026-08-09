@@ -213,3 +213,66 @@ async def test_generate_with_reference_song_passes_through(
         # Cascade receives the full prompt which includes the reference song
         assert "Bachata Rosa" in prompt_arg
         assert "Juan Luis Guerra" in prompt_arg
+
+
+class TestIdeaSeed:
+    """Idea seed in lyrics prompt (RQ-LYR-07)."""
+
+    def test_build_user_prompt_includes_idea_when_set(self) -> None:
+        """build_user_prompt should include an 'Idea principal' section when idea is set."""
+        prompt = build_user_prompt(
+            recipient="María",
+            relationship="pareja",
+            occasion="aniversario",
+            genre="bachata",
+            mood="romántica",
+            idea="canción de agradecimiento por mi hija",
+        )
+        assert "Idea principal" in prompt
+        assert "agradecimiento por mi hija" in prompt
+
+    def test_build_user_prompt_omits_idea_when_none(self) -> None:
+        """build_user_prompt should NOT include idea guidance when idea is None."""
+        prompt_with = build_user_prompt(
+            recipient="María",
+            relationship="pareja",
+            occasion="aniversario",
+            genre="bachata",
+            mood="romántica",
+            idea="tema especial",
+        )
+        prompt_without = build_user_prompt(
+            recipient="María",
+            relationship="pareja",
+            occasion="aniversario",
+            genre="bachata",
+            mood="romántica",
+        )
+        assert "tema especial" in prompt_with
+        assert "Idea principal" not in prompt_without
+        assert prompt_with != prompt_without
+
+    @pytest.mark.asyncio
+    async def test_generate_passes_idea_to_prompt(
+        self, sample_result: LyricsResult, mock_provider: MagicMock,
+    ) -> None:
+        """generate(idea=...) should include the idea in the prompt passed to cascade."""
+        with patch("app.lyrics.cascade_providers", new_callable=AsyncMock) as mock_cascade, \
+             patch("app.lyrics._build_providers", return_value=[mock_provider]):
+            mock_cascade.return_value = sample_result
+
+            await generate(
+                recipient="María",
+                relationship="pareja",
+                occasion="personalizada",
+                genre="bachata",
+                mood="romántica",
+                story="un recuerdo especial",
+                idea="canción de agradecimiento por mi hija",
+            )
+
+            mock_cascade.assert_called_once()
+            prompt_arg = mock_cascade.call_args[0][1]
+            assert "Idea principal" in prompt_arg
+            assert "agradecimiento por mi hija" in prompt_arg
+            assert "recuerdo especial" in prompt_arg

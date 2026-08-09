@@ -14,10 +14,13 @@ from fastapi import APIRouter, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.audio_analysis import analyze_audio
+from app.lyrics import generate as lyrics_generate
+from app.lyrics.providers import LyricsGenerationError
 from app.models import (
     AudioReferenceResponse,
     CheckoutResponse,
     JobCreateResponse,
+    LyricsResult,
     ReplaceFragmentsRequest,
     SongProjectCreate,
     SongProjectResponse,
@@ -28,6 +31,7 @@ from app.models import (
 from app.projects import create_final_job, create_preview_job
 from app.projects import create_project as orch_create_project
 from app.projects import ref_audio, store
+from app.projects.draft import normalize_draft
 from app.projects.payment import create_checkout, webhook_router
 
 router = APIRouter(prefix="/api/projects")
@@ -62,6 +66,12 @@ def _project_to_response(project: dict) -> SongProjectResponse:
         voice=project["voice"],
         reference_song=project.get("reference_song"),
         reference_description=project.get("reference_description"),
+        reference_audio_url=(
+            ref_audio.get_reference_audio_url(project["id"])
+            if ref_audio.has_reference_audio(project["id"])
+            else None
+        ),
+        idea=project.get("idea"),
         status=project["status"],
         fragments=fragments,
         previews=previews,
@@ -100,13 +110,16 @@ async def get_project(project_id: str) -> SongProjectResponse:
 
 @router.patch("/{project_id}")
 async def update_project(
-    project_id: str, data: SongProjectUpdate,
+    project_id: str,
+    data: SongProjectUpdate,
 ) -> SongProjectResponse:
     """Update project fields and/or add a story fragment."""
     from app.config import settings
 
     found = await store.update_project(
-        project_id, data, db_path=settings.DB_PATH,
+        project_id,
+        data,
+        db_path=settings.DB_PATH,
     )
     if not found:
         raise HTTPException(
@@ -124,7 +137,8 @@ COMPLETED_STATUSES = frozenset({"paid", "completed"})
 
 @router.put("/{project_id}/fragments")
 async def replace_fragments(
-    project_id: str, data: ReplaceFragmentsRequest,
+    project_id: str,
+    data: ReplaceFragmentsRequest,
 ) -> SongProjectResponse:
     """Replace the full story fragment list of a project.
 
@@ -151,7 +165,9 @@ async def replace_fragments(
         )
 
     found = await store.replace_fragments(
-        project_id, data.fragments, db_path=settings.DB_PATH,
+        project_id,
+        data.fragments,
+        db_path=settings.DB_PATH,
     )
     if not found:
         raise HTTPException(
@@ -239,9 +255,66 @@ async def create_final(project_id: str) -> JobCreateResponse:
         raise
 
 
+@router.post("/{project_id}/lyrics-draft", response_model=LyricsResult)
+async def lyrics_draft(project_id: str) -> LyricsResult:
+    """Generate editable draft lyrics for a project (RQ-DRAFT-01).
+
+    Combines the project's recipient, accumulated story fragments, and the
+    optional ``idea`` seed, then calls the lyrics generation cascade with a
+    hard-coded ``occasion="personalizada"`` (there is no occasion column).
+
+    Maps any ``LyricsGenerationError`` (all providers failed OR draft < 10
+    lines) to a 503 "all LLM providers unavailable".
+    """
+    from app.config import settings
+
+    project = await store.get_project(project_id, db_path=settings.DB_PATH)
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "project_not_found", "project_id": project_id},
+        )
+
+    story = await store.get_accumulated_story(project_id, db_path=settings.DB_PATH)
+    idea = project.get("idea")
+
+    try:
+        result = await lyrics_generate(
+            recipient=project["recipient"],
+            relationship=project["relationship"],
+            occasion="personalizada",
+            genre=project["genre"],
+            mood=project["mood"],
+            story=story,
+            idea=idea,
+            reference_song=project.get("reference_song"),
+            reference_description=project.get("reference_description"),
+        )
+    except LyricsGenerationError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "all_llm_providers_unavailable",
+                "message": "all LLM providers unavailable",
+            },
+        )
+
+    try:
+        return normalize_draft(result)
+    except LyricsGenerationError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "all_llm_providers_unavailable",
+                "message": "all LLM providers unavailable",
+            },
+        )
+
+
 @router.post("/{project_id}/reference-audio")
 async def upload_reference_audio(
-    project_id: str, file: UploadFile,
+    project_id: str,
+    file: UploadFile,
 ) -> AudioReferenceResponse:
     """Upload an audio file as style reference for the project.
 

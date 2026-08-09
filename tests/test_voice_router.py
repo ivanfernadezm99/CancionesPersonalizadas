@@ -10,14 +10,39 @@ Covers:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from jose import jwt
+
+NAMEID_URI = "http://schemas.microsoft.com/ws/2008/06/identity/claims/nameidentifier"
+ROLE_URI = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+BUSINESS_CLAIM = "BusinessId"
+
+TEST_SECRET = "test-shared-secret-0123456789abcdef"
+
+
+def _make_hs256_token() -> str:
+    """Create a valid HS256 JWT signed with the shared test secret."""
+    now = datetime.now(timezone.utc)
+    claims: dict[str, Any] = {
+        NAMEID_URI: "user-abc-123",
+        ROLE_URI: 1,
+        BUSINESS_CLAIM: "biz-001",
+        "iss": "http://localhost",
+        "aud": "http://localhost",
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(hours=1)).timestamp()),
+    }
+    return jwt.encode(claims, TEST_SECRET, algorithm="HS256")
 
 
 def _setup(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Configure test settings for voice router tests."""
     from app.config import settings
@@ -38,8 +63,46 @@ def _client() -> AsyncClient:
 
 
 @pytest.mark.asyncio
+async def test_get_voices_jwt_enforced_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GET /api/voices honors JWT enforcement (contract under enforced mode).
+
+    Without a Bearer token -> 401. With a valid HS256 token -> 200 + 7 voices.
+    The suite-wide autouse fixture disables enforcement, so this test sets
+    enforcement explicitly (mirroring the auth-guard test pattern).
+    """
+    _setup(tmp_path, monkeypatch)
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "JWT_SHARED_SECRET", TEST_SECRET)
+    monkeypatch.setattr(settings, "JWT_ISSUER", "http://localhost")
+    monkeypatch.setattr(settings, "JWT_AUDIENCE", "http://localhost")
+    monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
+    monkeypatch.setattr(settings, "JWT_ALLOWED_ROLES", [1, 2, 3])
+    monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", True)
+
+    async with _client() as client:
+        # No token -> 401 unauthorized
+        no_token = await client.get("/api/voices")
+        assert no_token.status_code == 401
+        assert no_token.json()["error"] == "unauthorized"
+
+        # Valid HS256 token -> 200 with 7 voices
+        token = _make_hs256_token()
+        ok = await client.get(
+            "/api/voices",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert ok.status_code == 200
+        assert len(ok.json()) == 7
+
+
+@pytest.mark.asyncio
 async def test_get_voices_returns_seven_exact_entries(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GET /api/voices returns the 7 exact {id,label,gender} entries (RQ-VOICE-01)."""
     _setup(tmp_path, monkeypatch)
@@ -55,7 +118,8 @@ async def test_get_voices_returns_seven_exact_entries(
 
 @pytest.mark.asyncio
 async def test_get_voices_includes_es_latino_male(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GET /api/voices must include es-latino-male (RQ-VOICE-01 scenario 2)."""
     _setup(tmp_path, monkeypatch)
@@ -67,7 +131,8 @@ async def test_get_voices_includes_es_latino_male(
 
 @pytest.mark.asyncio
 async def test_get_voices_excludes_legacy_duo_and_children(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GET /api/voices must not include duo or children (RQ-VOICE-02)."""
     _setup(tmp_path, monkeypatch)
@@ -80,7 +145,8 @@ async def test_get_voices_excludes_legacy_duo_and_children(
 
 @pytest.mark.asyncio
 async def test_get_voices_keeps_female_and_male_labels(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GET /api/voices must keep exact 'Voz Femenina'/'Voz Masculina' labels (D1)."""
     _setup(tmp_path, monkeypatch)
@@ -96,7 +162,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_create_project_422_on_unknown_voice(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects with voice='celebrity_x' must return 422."""
         _setup(tmp_path, monkeypatch)
@@ -115,7 +183,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_create_project_422_on_legacy_duo(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects with voice='duo' must return 422 (RQ-VOICE-02)."""
         _setup(tmp_path, monkeypatch)
@@ -134,7 +204,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_create_project_422_on_legacy_children(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects with voice='children' must return 422 (RQ-VOICE-02)."""
         _setup(tmp_path, monkeypatch)
@@ -153,7 +225,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_create_project_accepts_es_latino_male(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/projects with voice='es-latino-male' must be accepted (RQ-VOICE-02)."""
         _setup(tmp_path, monkeypatch)
@@ -172,7 +246,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_patch_without_voice_does_not_422(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """PATCH /api/projects/{id} without a voice field must NOT 422 (D5)."""
         _setup(tmp_path, monkeypatch)
@@ -197,7 +273,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_patch_update_voice_rejects_unknown(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """PATCH /api/projects/{id} with voice='duo' must return 422 (RQ-VOICE-02)."""
         _setup(tmp_path, monkeypatch)
@@ -222,7 +300,9 @@ class TestVoiceValidation:
 
     @pytest.mark.asyncio
     async def test_generate_422_on_unknown_voice(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """POST /api/generate with voice='duo' must return 422 (RQ-VOICE-02)."""
         _setup(tmp_path, monkeypatch)

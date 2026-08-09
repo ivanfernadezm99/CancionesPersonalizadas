@@ -56,6 +56,7 @@ async def job_worker(job_id: str) -> None:
             genre=params.genre,
             mood=params.mood,
             story=params.story,
+            idea=getattr(params, "idea", None),
             reference_song=ref_desc or ref_song,
             reference_description=ref_desc,
         )

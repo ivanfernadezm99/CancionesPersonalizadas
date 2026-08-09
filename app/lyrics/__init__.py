@@ -47,6 +47,7 @@ async def generate(
     story: str | None = None,
     reference_song: str | None = None,
     reference_description: str | None = None,
+    idea: str | None = None,
 ) -> LyricsResult:
     """Generate lyrics using the multi-provider cascade.
 
@@ -59,6 +60,7 @@ async def generate(
         story: Optional personal story or anecdote.
         reference_song: Optional reference song for style inspiration.
         reference_description: Optional style description from audio analysis.
+        idea: Optional free-text thematic seed for the lyrics (RQ-LYR-07).
 
     Returns:
         A structured LyricsResult containing verses, chorus, and metadata.
@@ -75,6 +77,7 @@ async def generate(
         story=story,
         reference_song=reference_song,
         reference_description=reference_description,
+        idea=idea,
     )
 
     full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"
