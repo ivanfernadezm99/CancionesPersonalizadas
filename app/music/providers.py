@@ -222,6 +222,10 @@ class SunoProvider(BaseMusicProvider):
                 "title": "",
                 "model": settings.SUNO_DEFAULT_MODEL,
                 "lyrics": lyrics,
+                # API-required fields (sunoapi.org rejects with
+                # "instrumental cannot be null" when either is missing)
+                "instrumental": False,
+                "callBackUrl": "https://enlaceschacocloud.duckdns.org/",
             }
             endpoint = f"{self.base_url}/api/v1/generate"
 
@@ -249,7 +253,11 @@ class SunoProvider(BaseMusicProvider):
                 response_data = data.get("data")
                 task_id: str = response_data.get("taskId", "") if response_data else ""
             else:
-                task_id: str = data.get("id", "")
+                # Legacy format: { "id": ... }; sunoapi.org: { code, data: { taskId } }
+                task_id = data.get("id") or ""
+                if not task_id:
+                    response_data = data.get("data")
+                    task_id = response_data.get("taskId", "") if response_data else ""
             if not task_id:
                 raise SunoError("Suno invoke returned no task ID")
             logger.info("Suno invoke successful: taskId=%s (cover=%s)", task_id, bool(reference_audio))

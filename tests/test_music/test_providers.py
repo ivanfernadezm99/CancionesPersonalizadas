@@ -262,6 +262,56 @@ class TestSunoInvoke:
             assert payload["model"] == "V4_5"
 
     @pytest.mark.asyncio
+    async def test_invoke_text_to_music_sends_required_api_fields(self) -> None:
+        """Text-to-music payload must include the API-required instrumental and
+        callBackUrl fields (sunoapi.org rejects the request with
+        "instrumental cannot be null" when they are missing)."""
+        import json
+
+        import respx
+
+        provider = SunoProvider(api_key="sk-test", base_url="http://suno.test")
+
+        async with respx.mock:
+            route = respx.post("http://suno.test/api/v1/generate").respond(
+                200,
+                json={"id": "task-suno-002"},
+            )
+
+            with patch("app.config.settings") as mock_settings:
+                mock_settings.SUNO_DEFAULT_MODEL = "V4_5"
+
+                await provider._invoke(lyrics="Test lyrics", prompt="romántica bachata")
+
+            payload = json.loads(route.calls[0].request.content)
+            assert payload["instrumental"] is False
+            assert isinstance(payload.get("callBackUrl"), str) and payload["callBackUrl"]
+
+    @pytest.mark.asyncio
+    async def test_invoke_text_to_music_unwraps_sunoapi_org_task_id(self) -> None:
+        """Text-to-music must unwrap the sunoapi.org {code, msg, data:{taskId}}
+        envelope (legacy direct {id} format is also supported)."""
+        import json
+
+        import respx
+
+        provider = SunoProvider(api_key="sk-test", base_url="http://suno.test")
+
+        async with respx.mock:
+            route = respx.post("http://suno.test/api/v1/generate").respond(
+                200,
+                json={"code": 200, "msg": "ok", "data": {"taskId": "task-suno-org-001"}},
+            )
+
+            with patch("app.config.settings") as mock_settings:
+                mock_settings.SUNO_DEFAULT_MODEL = "V4_5"
+
+                task_id = await provider._invoke(lyrics="Test", prompt="Test")
+
+            assert task_id == "task-suno-org-001"
+            assert json.loads(route.calls[0].request.content)["instrumental"] is False
+
+    @pytest.mark.asyncio
     async def test_invoke_sends_bearer_token(self) -> None:
         """_invoke() should send API key as Bearer token."""
         import respx
