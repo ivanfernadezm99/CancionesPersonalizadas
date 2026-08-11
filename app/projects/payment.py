@@ -40,7 +40,7 @@ async def create_checkout(project_id: str) -> CheckoutResponse:
     payload = {
         "project_id": project_id,
         "amount": settings.SONG_PRICE,
-        "currency": "USD",
+        "currency": "ARS",
         "description": f"Personalized song for {project.get('recipient', 'unknown')}",
         "success_url": (
             f"{settings.PUBLIC_BASE_URL}/payment/success?project_id={project_id}"
