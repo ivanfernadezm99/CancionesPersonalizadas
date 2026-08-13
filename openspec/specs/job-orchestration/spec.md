@@ -74,6 +74,7 @@ The legacy `POST /api/generate` (RQ-JOB-01) and `job_worker` MUST accept and pro
 | RQ-RS-03 | `job_worker` MUST propagate `request.reference_description` to `build_prompt(...)` (voice/music), prioritizing it over `reference_song` (matches `app/projects/__init__.py` behavior). | MUST |
 | RQ-RS-04 | On completion, `job.metadata` MUST persist both `reference_song` and `reference_description` (as provided, or `None`) for auditability. | MUST |
 | RQ-RS-05 | Legacy requests with both fields `None` MUST behave identically to before (optional fields, `None` default — backward compatible). | MUST |
+| RQ-RS-06 | BOTH `project_worker` and `job_worker` MUST pass `reference_song` through the shared tag sanitizer before it reaches `lyrics_generate` and `build_prompt`, so both paths handle the reference identically (legacy `"Song - Artist"` values stripped; artist-only values produce no reference). | MUST |
 
 #### Scenario: Legacy request with reference_description
 
@@ -100,6 +101,13 @@ The legacy `POST /api/generate` (RQ-JOB-01) and `job_worker` MUST accept and pro
 - AND `job.metadata["reference_song"]` is `None`
 - AND `job.metadata["reference_description"]` is `None`
 
+#### Scenario: Consistent sanitization across both worker paths
+
+- GIVEN a project flow (`project_worker`) and a legacy flow (`job_worker`) both carrying `reference_song="Bachata Rosa - Juan Luis Guerra"`
+- WHEN each worker runs the pipeline
+- THEN both workers MUST pass the sanitized `"Bachata Rosa"` to `lyrics_generate` and `build_prompt`
+- AND the lyrics and voice prompts in both paths MUST contain `"Bachata Rosa"` with no artist token
+
 ### RQ-JOB-02: Status Endpoint
 
 The system MUST expose `GET /api/status/{job_id}` that returns current job state.
@@ -122,6 +130,8 @@ The system MUST expose `GET /api/status/{job_id}` that returns current job state
   }
 }
 ```
+
+When a job fails due to Suno's artist rejection, the `error` field MUST contain the friendly Spanish translation produced by the provider — never the raw English Suno message.
 
 #### Scenario: Status of queued job
 
@@ -154,6 +164,13 @@ The system MUST expose `GET /api/status/{job_id}` that returns current job state
 - WHEN GET /api/status/{job_id} is called
 - THEN the response MUST be 404
 - AND the body MUST indicate the job was not found
+
+#### Scenario: Artist-rejection failure surfaces translated error
+
+- GIVEN a job that failed because Suno rejected an artist name
+- WHEN GET /api/status/{job_id} is called
+- THEN the `error` MUST equal the friendly Spanish artist message
+- AND the `error` MUST NOT contain raw English Suno text
 
 ### RQ-JOB-03: Status State Machine
 
@@ -295,6 +312,8 @@ The system SHOULD retry transient failures. Retry policy:
 | Download URL 5xx | 3 | Exponential 2s, 4s, 8s |
 | LLM malformed response | 1 | Immediate (different provider) |
 
+A Suno artist-rejection (business error, code=400) MUST be treated as non-retryable: the job MUST fail immediately with the translated Spanish message.
+
 #### Scenario: Transient retry succeeds
 
 - GIVEN an OpenClaw gateway returns 503 on first attempt
@@ -315,6 +334,13 @@ The system SHOULD retry transient failures. Retry policy:
 - WHEN the error is received
 - THEN the system MUST NOT retry
 - AND the job MUST immediately be marked as "failed"
+
+#### Scenario: Suno artist rejection is non-retryable and translated
+
+- GIVEN `SunoProvider._invoke` raises the translated artist message
+- WHEN the worker handles the failure
+- THEN the job MUST be marked "failed" without retry
+- AND the job `error` MUST be the friendly Spanish message
 
 ### RQ-JOB-07: Project-Backed Jobs
 

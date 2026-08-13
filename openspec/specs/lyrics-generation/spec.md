@@ -119,6 +119,8 @@ The system SHOULD apply prompt engineering optimized for Spanish romantic poetry
 - Use genre-typical vocabulary and rhythm hints
 - When `reference_song` is provided, instruct the model to match that song's style, rhythm, and thematic elements
 
+When `reference_song` is provided, the lyrics prompt MUST use the sanitized song token (artist stripped via the shared tag sanitizer) so the LLM does not echo an artist name into the lyrics that reach Suno.
+
 #### Scenario: Genre-appropriate vocabulary
 
 - GIVEN genre="reggaetón"
@@ -138,7 +140,15 @@ The system SHOULD apply prompt engineering optimized for Spanish romantic poetry
 - GIVEN reference_song="El Amor - José José" and genre="balada romántica"
 - WHEN the prompt includes the reference
 - THEN lyrics SHOULD match the romantic ballad style of the reference
-- AND the reference song name MUST appear in the prompt
+- AND the sanitized song token "El Amor" MUST appear in the prompt
+- AND the artist "José José" MUST NOT appear in the prompt
+
+#### Scenario: Artist-only reference yields no style guidance
+
+- GIVEN reference_song="Los Palmeras"
+- WHEN the lyrics prompt is constructed
+- THEN the prompt MUST NOT include style guidance for the reference
+- AND lyrics MUST be generated from genre/mood alone
 
 ### RQ-LYR-05: Provider Key Validation
 
@@ -163,11 +173,13 @@ The system MUST validate that at least one LLM provider API key is configured at
 
 The system MUST accept an optional `reference_song` parameter in the lyrics generation context (from project settings). When provided, the LLM prompt MUST include style/melody guidance referencing that song.
 
+The reference used in the prompt MUST be the sanitized song token produced by the shared tag sanitizer. A "no usable reference" result MUST NOT inject any reference guidance.
+
 #### Scenario: Reference song in lyrics prompt
 
 - GIVEN a project with reference_song="Bachata Rosa - Juan Luis Guerra"
 - WHEN the lyrics prompt is constructed
-- THEN the prompt MUST include "al estilo de Bachata Rosa - Juan Luis Guerra"
+- THEN the prompt MUST include "al estilo de Bachata Rosa" (artist stripped)
 - AND the output SHOULD reflect bachata romantic structure
 
 #### Scenario: No reference song
@@ -176,6 +188,31 @@ The system MUST accept an optional `reference_song` parameter in the lyrics gene
 - WHEN the prompt is constructed
 - THEN the prompt MUST NOT include style references
 - AND behavior MUST match existing lyrics generation
+
+#### Scenario: Artist-only reference in legacy project
+
+- GIVEN a legacy project with stored reference_song="La Mona Jiménez"
+- WHEN the lyrics prompt is constructed
+- THEN the prompt MUST NOT include the artist name
+- AND no style reference guidance MUST be added
+
+### RQ-LYR-07: Idea Seed in Lyrics Prompt
+
+The lyrics generation MUST accept an optional `idea` input and MUST include it as a thematic seed in the LLM prompt alongside the accumulated `story` fragments. When `idea` is absent, generation MUST behave exactly as today.
+
+#### Scenario: Idea included in prompt
+
+- GIVEN lyrics generation with `idea="agradecer a mi madre"`
+- WHEN the prompt is constructed
+- THEN the prompt MUST include the `idea` text as thematic guidance
+- AND the output SHOULD reflect the idea's theme
+
+#### Scenario: No idea, current behavior
+
+- GIVEN lyrics generation without `idea`
+- WHEN the prompt is constructed
+- THEN the prompt MUST NOT include idea guidance
+- AND output MUST match existing generation
 
 ## Edge Cases
 

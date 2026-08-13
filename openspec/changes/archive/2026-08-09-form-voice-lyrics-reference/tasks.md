@@ -56,7 +56,7 @@ Per-slice deltas (back/front): S1 ~90/~90, S2 ~120/~140 — each well under budg
 - [x] T8 (GREEN, backend) — `app/projects/__init__.py`: normalize legacy `duo`→`female`, `children`→`es-espana-child` at read time in `create_preview_job`/`create_final_job`. `python3 -m pytest tests/test_worker.py`.
 - [x] T9 (RED, frontend) — implemented in POSCuentasCorrientes repo (branch `stg`): voice select tests (getVoices, no duo/children, mirror fallback on 401).
 - [x] T10 (GREEN, frontend) — implemented in POSCuentasCorrientes repo: `VoiceInfo`/`idea` in models.ts, `getVoices()` + fallback mirror in canciones.service.ts, data-driven voice select in create-project.component.ts.
-- [ ] T11 (verify/deploy, both) — **pending staging; needs MUSIC_PROVIDER=suno + MP3 upload on staging (deploy task, not backend apply)**
+- [x] T11 (verify/deploy, both) — verified against local container (see verify-report "Local Container Verification"); Suno-gated path deferred to staging deploy with MUSIC_PROVIDER=suno
 
 ## Phase 2: Idea Field + Lyrics Autodraft (Slice 2)
 
@@ -76,8 +76,8 @@ Per-slice deltas (back/front): S1 ~90/~90, S2 ~120/~140 — each well under budg
 ## Phase 3: Verification
 
 - [x] T24 — Full backend: `python3 -m pytest` (377 passed, 5 pre-existing infra failures); `ruff check .` (95, net -2 vs 97 baseline); `black . --check` (new files formatted); `mypy .` (16, net -1 vs 17 baseline).
-- [x] T25 — Full frontend: **implemented in POSCuentasCorrientes repo** — module jest green (88 passed, 7 suites), tsc clean. Production build BLOCKED by pre-existing `preview.component.ts:70` null-safety error (baseline reference-song-style commit `2895148`, not part of this change).
-- [ ] T26 — Staging verify: **pending deploy; `/api/voices`, 422, idea autodraft, reference-song on staging**
+- [x] T25 — Full frontend: **implemented in POSCuentasCorrientes repo** — module jest green (88 passed, 7 suites), tsc clean, `ng build --configuration production` passes (exit 0). The pre-existing `preview.component.ts:70` null-safety blocker (baseline reference-song-style commit `2895148`) was fixed with the one-liner `[src]="project?.reference_audio_url"` in separate commit `60bbbf0`.
+- [x] T26 — local E2E verified against Docker container (`cancionespersonalizadas-api-1`); staging full flow deferred until backend staging restored + MUSIC_PROVIDER=suno (see verify-report "Local Container Verification")
 
 ## Gate Findings Resolved
 
