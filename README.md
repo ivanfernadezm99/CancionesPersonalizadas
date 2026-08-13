@@ -20,7 +20,7 @@ Tú contás la historia → LLM escribe la letra → Lyria 3 la canta → Recib�
 | Paso | Qué pasa | Tiempo estimado |
 |------|----------|-----------------|
 | **1. Pedido** | Enviás nombre, ocasión, género, tono y una historia opcional | Instantáneo |
-| **2. Letra** | Un LLM (OpenAI, Gemini o OpenRouter) genera 2-3 versos + coro personalizados en español | ~5-10 seg |
+| **2. Letra** | Un LLM (Zen Big Pickle/Nemotron, OpenAI, Gemini o OpenRouter) genera 2-3 versos + coro personalizados en español | ~5-10 seg |
 | **3. Música** | Google Lyria 3 genera la canción con la letra, el género y la voz que elegiste | ~30-180 seg |
 | **4. Post-producción** | Se extiende la duración a ~2:30 min con crossfade natural | ~2 seg |
 | **5. Descarga** | Podés escuchar el MP3 via streaming o descargarlo | Listo |
@@ -65,7 +65,7 @@ POST /api/generate
 - **Python 3.10+**
 - **ffmpeg** (para extensión de duración con pydub)
 - **OpenClaw gateway** corriendo en `localhost:18789` (para generación de música)
-- **API keys**: al menos un LLM (OpenAI / Gemini / OpenRouter) + token de OpenClaw
+- **API keys**: al menos un LLM (Zen / OpenAI / Gemini / OpenRouter) + token de OpenClaw
 
 ### Instalación
 
@@ -84,7 +84,7 @@ pip install -e ".[dev]"
 # 4. Configurar variables de entorno
 cp .env.example .env
 nano .env
-# Completá al menos OPENAI_API_KEY, GEMINI_API_KEY o OPENROUTER_API_KEY
+# Completá al menos ZEN_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY o OPENROUTER_API_KEY
 # Y OPENCLAW_TOKEN para generación de música
 
 # 5. Verificar que funciona
@@ -224,9 +224,12 @@ Información del servicio:
 
 | Variable | Requerida | Default | Descripción |
 |----------|-----------|---------|-------------|
-| `OPENAI_API_KEY` | ⚠️ Una de tres | `""` | API key de OpenAI (GPT-4o) |
-| `GEMINI_API_KEY` | ⚠️ Una de tres | `""` | API key de Google Gemini |
-| `OPENROUTER_API_KEY` | ⚠️ Una de tres | `""` | API key de OpenRouter |
+| `ZEN_API_KEY` | ⚠️ Una de varias | `""` | API key de OpenCode Zen (Big Pickle + Nemotron gratuitos) |
+| `ZEN_PRIMARY_MODEL` | No | `big-pickle` | Modelo principal de Zen (gratuito) |
+| `ZEN_SECONDARY_MODEL` | No | `nemotron-3-ultra-free` | Modelo secundario de Zen (NVIDIA, gratuito) |
+| `OPENAI_API_KEY` | ⚠️ Una de varias | `""` | API key de OpenAI (GPT-4o) |
+| `GEMINI_API_KEY` | ⚠️ Una de varias | `""` | API key de Google Gemini |
+| `OPENROUTER_API_KEY` | ⚠️ Una de varias | `""` | API key de OpenRouter |
 | `OPENCLAW_TOKEN` | ✅ Sí | `""` | Token del gateway OpenClaw |
 | `OPENCLAW_BASE_URL` | No | `http://localhost:18789` | URL base de OpenClaw |
 | `DB_PATH` | No | `jobs.db` | Ruta a la base SQLite |
@@ -235,7 +238,7 @@ Información del servicio:
 | `CLEANUP_INTERVAL_SECONDS` | No | `3600` | Intervalo de limpieza |
 | `MAX_CONCURRENT_JOBS` | No | `5` | Generaciones simultáneas máximas |
 
-> Las API keys de LLM se cascaden automáticamente: primero OpenAI, si falla Gemini, si falla OpenRouter.
+> Las API keys de LLM se cascadan automáticamente: primero Zen (Big Pickle), si falla Zen (Nemotron), luego OpenAI, Gemini y OpenRouter.
 
 ---
 
@@ -256,7 +259,7 @@ canciones-personalizadas/
 │   ├── lyrics/                   # Generación de letras con LLM
 │   │   ├── __init__.py           # Orquestador multi-provider
 │   │   ├── prompts.py            # Prompts en español por género musical
-│   │   └── providers.py          # OpenAI, Gemini, OpenRouter + cascade
+│   │   └── providers.py          # Zen, OpenAI, Gemini, OpenRouter + cascade
 │   ├── music/                    # Generación de música con Lyria 3
 │   │   ├── __init__.py           # API pública generate()
 │   │   ├── openclaw.py           # Cliente HTTP para OpenClaw gateway
@@ -293,7 +296,7 @@ canciones-personalizadas/
 |-----------|------------|
 | Framework web | FastAPI + uvicorn |
 | Base de datos | SQLite (aiosqlite async, WAL mode) |
-| Letras | LLMs: OpenAI GPT-4o, Gemini 2.0 Flash, OpenRouter |
+| Letras | LLMs: Zen (Big Pickle/Nemotron), OpenAI GPT-4o, Gemini 2.0 Flash, OpenRouter |
 | Música | Google Lyria 3 via OpenClaw gateway |
 | Audio | pydub + ffmpeg (duración extendida a ~2:30min) |
 | Validación | Pydantic v2 + pydantic-settings |
@@ -308,7 +311,7 @@ canciones-personalizadas/
 
 - Se construye un **prompt en español** adaptado al género musical (bachata, balada, reggaetón, etc.)
 - El prompt incluye: nombre del destinatario, relación, ocasión, tono e historia opcional
-- Los providers se prueban en **cascada automática**: OpenAI → Gemini → OpenRouter
+- Los providers se prueban en **cascada automática**: Zen (Big Pickle → Nemotron) → OpenAI → Gemini → OpenRouter
 - El primer provider que devuelve un JSON válido gana
 - El LLM devuelve la letra como JSON estructurado: versos, coro, puente opcional y título sugerido
 

@@ -15,6 +15,9 @@
 | `OPENCLAW_TOKEN` | Si MUSIC_PROVIDER=openclaw | OpenClaw | Token del gateway local Lyria 3 |
 | `OPENCLAW_BASE_URL` | No | OpenClaw | `http://localhost:18789` |
 | `OPENAI_API_KEY` | No (recomendado) | OpenAI | Para generación de letras vía LLM |
+| `ZEN_API_KEY` | No (recomendado) | Zen (OpenCode) | Provider OpenAI-compatible gratuito (Big Pickle / Nemotron) |
+| `ZEN_PRIMARY_MODEL` | No | Zen | `big-pickle` — modelo primario del cascade |
+| `ZEN_SECONDARY_MODEL` | No | Zen | `nemotron-3-ultra-free` — modelo secundario del cascade |
 | `GOOGLE_API_KEY` | No | Gemini | Alternativa para letras |
 | `OPENROUTER_API_KEY` | No | OpenRouter | Alternativa para letras |
 | `MISTRAL_API_KEY` | No | Mistral | Alternativa para letras |

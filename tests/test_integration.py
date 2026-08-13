@@ -912,3 +912,33 @@ class TestStartupValidation:
         monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-valid-key")
 
         assert settings.has_any_llm_key() is True
+
+    @pytest.mark.asyncio
+    async def test_settings_has_any_llm_key_true_with_only_zen_key(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """has_any_llm_key() should be True when only ZEN_API_KEY is set (RQ-LYR-05)."""
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+        monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
+        monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
+        monkeypatch.setattr(settings, "ZEN_API_KEY", "zen-valid-key")
+
+        assert settings.has_any_llm_key() is True
+
+    @pytest.mark.asyncio
+    async def test_settings_has_any_llm_key_false_when_zen_key_also_empty(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """has_any_llm_key() should be False when ZEN_API_KEY is also empty (RQ-LYR-05)."""
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+        monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
+        monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
+        monkeypatch.setattr(settings, "ZEN_API_KEY", "")
+
+        assert settings.has_any_llm_key() is False

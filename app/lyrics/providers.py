@@ -1,7 +1,7 @@
 """Multi-provider LLM clients for lyrics generation.
 
-Provides OpenAI, Google Gemini, and OpenRouter providers with a cascade
-fallback mechanism. Each provider implements async generate() and the
+Provides OpenAI, Google Gemini, OpenRouter, and OpenCode Zen providers with a
+cascade fallback mechanism. Each provider implements async generate() and the
 cascade tries providers in order until one returns a valid result.
 """
 
@@ -211,31 +211,41 @@ class GeminiProvider(BaseProvider):
             return None
 
 
-# ── OpenRouter Provider ──────────────────────────────────────────────────────
+# ── OpenAI-Compatible Providers (OpenRouter, Zen) ───────────────────────────
 
 
-class OpenRouterProvider(BaseProvider):
-    """Lyrics generation via OpenRouter API."""
+class OpenAICompatProvider(BaseProvider):
+    """Base for OpenAI-compatible ``/chat/completions`` providers.
 
-    def __init__(self, api_key: str) -> None:
-        super().__init__(api_key, "openrouter")
+    Parametrized by name, api_key, model, base_url, and request headers.
+    Reads the JSON answer from ``choices[0]["message"]["content"]`` and ignores
+    reasoning fields (``reasoning_content``/``reasoning_details``) that
+    reasoning models may return alongside ``content``.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        api_key: str,
+        model: str,
+        base_url: str,
+        headers: dict[str, str],
+    ) -> None:
+        super().__init__(api_key, name)
+        self.model = model
         self.client = httpx.AsyncClient(
-            base_url="https://openrouter.ai/api/v1",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://canciones-personalizadas.app",
-            },
+            base_url=base_url,
+            headers=headers,
             timeout=60.0,
         )
 
     async def generate(self, prompt: str) -> LyricsResult | None:
-        logger.info("Generating lyrics with OpenRouter...")
+        logger.info("Generating lyrics with %s (%s)...", self.name, self.model)
         try:
             response = await self.client.post(
                 "/chat/completions",
                 json={
-                    "model": "openai/gpt-4o-mini",
+                    "model": self.model,
                     "messages": [
                         {"role": "system", "content": (
                             "Eres un compositor de canciones románticas en español. "
@@ -252,12 +262,12 @@ class OpenRouterProvider(BaseProvider):
 
             choices = data.get("choices", [])
             if not choices:
-                logger.warning("OpenRouter returned no choices")
+                logger.warning("%s returned no choices", self.name)
                 return None
 
             content = choices[0].get("message", {}).get("content")
             if not content:
-                logger.warning("OpenRouter returned empty content")
+                logger.warning("%s returned empty content", self.name)
                 return None
 
             result = _parse_lyrics_json(content)
@@ -266,8 +276,56 @@ class OpenRouterProvider(BaseProvider):
             return result
 
         except Exception as exc:
-            logger.warning("OpenRouter generation failed: %s", exc)
+            logger.warning("%s generation failed: %s", self.name, exc)
             return None
+
+
+class OpenRouterProvider(OpenAICompatProvider):
+    """Lyrics generation via OpenRouter API."""
+
+    def __init__(self, api_key: str) -> None:
+        super().__init__(
+            name="openrouter",
+            api_key=api_key,
+            model="openai/gpt-4o-mini",
+            base_url="https://openrouter.ai/api/v1",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://canciones-personalizadas.app",
+            },
+        )
+
+
+# Zen model → cascade entry name mapping (keeps result.provider transparent).
+_ZEN_MODEL_ENTRY_NAMES: dict[str, str] = {
+    "big-pickle": "zen-big-pickle",
+    "nemotron-3-ultra-free": "zen-nemotron",
+}
+
+
+class ZenProvider(OpenAICompatProvider):
+    """Lyrics generation via OpenCode Zen (free, OpenAI-compatible endpoint).
+
+    Zen reasoning models (Big Pickle, Nemotron) return the JSON answer in
+    ``message.content`` — this provider reads ``content`` only and ignores
+    ``reasoning_content``/``reasoning_details``. Empty content yields None so
+    the cascade falls through to the next provider.
+    """
+
+    def __init__(self, api_key: str, model: str) -> None:
+        if not api_key:
+            raise ValueError("ZEN_API_KEY is not configured")
+        super().__init__(
+            name=_ZEN_MODEL_ENTRY_NAMES.get(model, f"zen-{model}"),
+            api_key=api_key,
+            model=model,
+            base_url="https://opencode.ai/zen/v1",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
 
 
 # ── Cascade Logic ────────────────────────────────────────────────────────────

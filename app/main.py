@@ -69,7 +69,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     if not settings.has_any_llm_key():
         raise RuntimeError(
             "No LLM API keys configured. Set at least one of: "
-            "OPENAI_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY"
+            "ZEN_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY"
         )
 
     # Validate voice registry

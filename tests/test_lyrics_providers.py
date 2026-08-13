@@ -7,11 +7,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from app.config import settings
 from app.lyrics.providers import (
     GeminiProvider,
     LyricsGenerationError,
     OpenAIProvider,
     OpenRouterProvider,
+    ZenProvider,
     cascade_providers,
 )
 from app.models import LyricsResult
@@ -240,6 +242,132 @@ class TestOpenRouterProvider:
 
             result = await provider.generate(sample_prompt)
             assert result is None
+
+
+# ── Zen Provider Tests ───────────────────────────────────────────────────────
+
+
+class TestZenProvider:
+    """Tests for ZenProvider (OpenCode Zen, OpenAI-compatible)."""
+
+    def test_init_with_no_key_raises_error(self) -> None:
+        """ZenProvider should raise ValueError if no API key."""
+        with pytest.raises(ValueError, match="ZEN_API_KEY"):
+            ZenProvider(api_key="", model="big-pickle")
+
+    @pytest.mark.asyncio
+    async def test_generate_returns_lyrics_result(
+        self, sample_prompt: str, valid_lyrics_json: str,
+    ) -> None:
+        """generate() should return LyricsResult on success, reading content only.
+
+        Zen reasoning models return JSON in ``content`` plus non-empty
+        ``reasoning_content`` — the JSON must be read from ``content`` and the
+        reasoning text must be ignored (RQ-LYR-03).
+        """
+        provider = ZenProvider(api_key="zen-test123", model="big-pickle")
+
+        with patch.object(provider.client, "post", new_callable=AsyncMock) as mock_post:
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_response.json = MagicMock(return_value={
+                "choices": [{
+                    "message": {
+                        "content": valid_lyrics_json,
+                        "reasoning_content": "thinking text (must be ignored)",
+                    },
+                }],
+            })
+            mock_post.return_value = mock_response
+
+            result = await provider.generate(sample_prompt)
+            assert result is not None
+            assert isinstance(result, LyricsResult)
+            assert result.provider == "zen-big-pickle"
+            assert result.title_suggestion == "María, Mi Amor"
+            assert len(result.verses) == 2
+            assert len(result.chorus.lines) == 4
+
+    @pytest.mark.asyncio
+    async def test_generate_returns_none_on_empty_content(
+        self, sample_prompt: str,
+    ) -> None:
+        """generate() should return None when content is empty so cascade falls through."""
+        provider = ZenProvider(api_key="zen-test123", model="big-pickle")
+
+        with patch.object(provider.client, "post", new_callable=AsyncMock) as mock_post:
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_response.json = MagicMock(return_value={
+                "choices": [{
+                    "message": {
+                        "content": "",
+                        "reasoning_content": "thinking text",
+                    },
+                }],
+            })
+            mock_post.return_value = mock_response
+
+            result = await provider.generate(sample_prompt)
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_generate_returns_none_on_error(
+        self, sample_prompt: str,
+    ) -> None:
+        """generate() should return None on API errors."""
+        provider = ZenProvider(api_key="zen-test123", model="big-pickle")
+
+        with patch.object(provider.client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.side_effect = httpx.HTTPStatusError(
+                "500 Internal Server Error",
+                request=httpx.Request(
+                    "POST", "https://opencode.ai/zen/v1/chat/completions",
+                ),
+                response=httpx.Response(500),
+            )
+
+            result = await provider.generate(sample_prompt)
+            assert result is None
+
+
+# ── Cascade Order Tests (Zen first) ─────────────────────────────────────────
+
+
+class TestBuildProviders:
+    """Tests for _build_providers() cascade ordering."""
+
+    def test_zen_providers_first_when_zen_key_set(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Zen primary/secondary come first, then openai, gemini, openrouter."""
+        from app.lyrics import _build_providers
+
+        monkeypatch.setattr(settings, "ZEN_API_KEY", "zen-test-key")
+        monkeypatch.setattr(settings, "ZEN_PRIMARY_MODEL", "big-pickle")
+        monkeypatch.setattr(settings, "ZEN_SECONDARY_MODEL", "nemotron-3-ultra-free")
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
+        monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-test-key")
+        monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "or-test-key")
+
+        providers = _build_providers()
+        assert [p.name for p in providers] == [
+            "zen-big-pickle", "zen-nemotron", "openai", "gemini", "openrouter",
+        ]
+
+    def test_no_zen_without_zen_key(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Without ZEN_API_KEY the cascade starts at openai (3 providers unchanged)."""
+        from app.lyrics import _build_providers
+
+        monkeypatch.setattr(settings, "ZEN_API_KEY", "")
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
+        monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-test-key")
+        monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "or-test-key")
+
+        providers = _build_providers()
+        assert [p.name for p in providers] == ["openai", "gemini", "openrouter"]
 
 
 # ── Cascade Tests ────────────────────────────────────────────────────────────

@@ -38,6 +38,9 @@ htmlcov/
 # Environment
 .env
 .env.local
+# Local-only Docker override — injects real secrets from .env into the
+# container without committing them (interpolated by docker compose).
+docker-compose.override.yml
 
 # Ruff
 .ruff_cache/

@@ -1,7 +1,7 @@
 """Lyrics generation orchestrator.
 
 Builds genre-specific Spanish prompts and cascades through configured
-LLM providers (OpenAI → Gemini → OpenRouter) until one returns valid
+LLM providers (Zen → OpenAI → Gemini → OpenRouter) until one returns valid
 structured lyrics.
 """
 
@@ -17,6 +17,7 @@ from app.lyrics.providers import (
     LyricsGenerationError,
     OpenAIProvider,
     OpenRouterProvider,
+    ZenProvider,
     cascade_providers,
 )
 from app.models import LyricsResult
@@ -28,6 +29,13 @@ def _build_providers() -> list[BaseProvider]:
     """Build provider instances based on configured API keys."""
     providers: list[BaseProvider] = []
 
+    if settings.ZEN_API_KEY:
+        providers.append(
+            ZenProvider(api_key=settings.ZEN_API_KEY, model=settings.ZEN_PRIMARY_MODEL)
+        )
+        providers.append(
+            ZenProvider(api_key=settings.ZEN_API_KEY, model=settings.ZEN_SECONDARY_MODEL)
+        )
     if settings.OPENAI_API_KEY:
         providers.append(OpenAIProvider(api_key=settings.OPENAI_API_KEY))
     if settings.GEMINI_API_KEY:
@@ -86,7 +94,7 @@ async def generate(
     if not providers:
         raise LyricsGenerationError(
             "No LLM providers configured — set at least one API key "
-            "(OPENAI_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY)"
+            "(ZEN_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY)"
         )
 
     logger.info(

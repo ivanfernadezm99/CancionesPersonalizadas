@@ -17,9 +17,14 @@ class Settings(BaseSettings):
     )
 
     # LLM API Keys (at least one required)
+    ZEN_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     OPENROUTER_API_KEY: str = ""
+
+    # Zen (OpenCode) model selection — cascade primary/secondary
+    ZEN_PRIMARY_MODEL: str = "big-pickle"
+    ZEN_SECONDARY_MODEL: str = "nemotron-3-ultra-free"
 
     # OpenClaw gateway
     OPENCLAW_TOKEN: str = ""
@@ -81,7 +86,12 @@ class Settings(BaseSettings):
 
     def has_any_llm_key(self) -> bool:
         """Return True if at least one LLM API key is configured."""
-        return bool(self.OPENAI_API_KEY or self.GEMINI_API_KEY or self.OPENROUTER_API_KEY)
+        return bool(
+            self.ZEN_API_KEY
+            or self.OPENAI_API_KEY
+            or self.GEMINI_API_KEY
+            or self.OPENROUTER_API_KEY
+        )
 
 
 settings = Settings()
