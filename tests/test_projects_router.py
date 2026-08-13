@@ -68,7 +68,7 @@ class TestCreateProject:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """POST /api/projects with reference_song should include it."""
+        """POST /api/projects with reference_song should strip the artist token."""
         from app.config import settings
 
         monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
@@ -98,11 +98,166 @@ class TestCreateProject:
             data = response.json()
             project_id = data["id"]
 
-            # Check it's stored via GET
+            # Check it's stored sanitized via GET (RQ-PRJ-01 strip-on-store)
             get_resp = await client.get(f"/api/projects/{project_id}")
             assert get_resp.status_code == 200
             proj = get_resp.json()
-            assert proj["reference_song"] == "Bachata Rosa - Juan Luis Guerra"
+            assert proj["reference_song"] == "Bachata Rosa"
+
+    @pytest.mark.asyncio
+    async def test_create_project_artist_only_returns_422(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """POST /api/projects with artist-only reference_song should return 422."""
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
+        monkeypatch.setattr(settings, "OUTPUT_DIR", str(tmp_path / "output"))
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
+        monkeypatch.setattr(settings, "OPENCLAW_TOKEN", "test-token")
+        monkeypatch.setattr(settings, "MAX_CONCURRENT_JOBS", 5)
+        monkeypatch.setattr("app.main._active_requests", 0)
+
+        from app.main import app
+        from app.tag_sanitizer import ARTIST_REJECTION_MESSAGE
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/projects",
+                json={
+                    "recipient": "María",
+                    "relationship": "pareja",
+                    "genre": "bachata",
+                    "mood": "romántica",
+                    "voice": "female",
+                    "reference_song": "Los Palmeras",
+                },
+            )
+            assert response.status_code == 422
+            assert ARTIST_REJECTION_MESSAGE in response.text
+
+    @pytest.mark.asyncio
+    async def test_create_project_empty_reference_song_accepted(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """POST /api/projects with empty reference_song should stay valid (RQ-PRJ-01)."""
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
+        monkeypatch.setattr(settings, "OUTPUT_DIR", str(tmp_path / "output"))
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
+        monkeypatch.setattr(settings, "OPENCLAW_TOKEN", "test-token")
+        monkeypatch.setattr(settings, "MAX_CONCURRENT_JOBS", 5)
+        monkeypatch.setattr("app.main._active_requests", 0)
+
+        from app.main import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/projects",
+                json={
+                    "recipient": "María",
+                    "relationship": "pareja",
+                    "genre": "bachata",
+                    "mood": "romántica",
+                    "voice": "female",
+                    "reference_song": "",
+                },
+            )
+            assert response.status_code == 201
+            data = response.json()
+            get_resp = await client.get(f"/api/projects/{data['id']}")
+            assert get_resp.json()["reference_song"] == ""
+
+    @pytest.mark.asyncio
+    async def test_patch_strips_artist_token(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """PATCH with 'Song de Artist' reference should strip and store the song."""
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
+        monkeypatch.setattr(settings, "OUTPUT_DIR", str(tmp_path / "output"))
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
+        monkeypatch.setattr(settings, "OPENCLAW_TOKEN", "test-token")
+        monkeypatch.setattr(settings, "MAX_CONCURRENT_JOBS", 5)
+        monkeypatch.setattr("app.main._active_requests", 0)
+
+        from app.main import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            create_resp = await client.post(
+                "/api/projects",
+                json={
+                    "recipient": "Lucía",
+                    "relationship": "pareja",
+                    "genre": "balada",
+                    "mood": "romántica",
+                    "voice": "female",
+                },
+            )
+            project_id = create_resp.json()["id"]
+
+            patch_resp = await client.patch(
+                f"/api/projects/{project_id}",
+                json={"reference_song": "Bailando de Enrique Iglesias"},
+            )
+            assert patch_resp.status_code == 200
+            assert patch_resp.json()["reference_song"] == "Bailando"
+
+    @pytest.mark.asyncio
+    async def test_patch_artist_only_returns_422_and_keeps_old_value(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """PATCH with artist-only reference returns 422 and does not overwrite."""
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
+        monkeypatch.setattr(settings, "OUTPUT_DIR", str(tmp_path / "output"))
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
+        monkeypatch.setattr(settings, "OPENCLAW_TOKEN", "test-token")
+        monkeypatch.setattr(settings, "MAX_CONCURRENT_JOBS", 5)
+        monkeypatch.setattr("app.main._active_requests", 0)
+
+        from app.main import app
+        from app.tag_sanitizer import ARTIST_REJECTION_MESSAGE
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            create_resp = await client.post(
+                "/api/projects",
+                json={
+                    "recipient": "Lucía",
+                    "relationship": "pareja",
+                    "genre": "balada",
+                    "mood": "romántica",
+                    "voice": "female",
+                    "reference_song": "Bachata Rosa",
+                },
+            )
+            project_id = create_resp.json()["id"]
+
+            patch_resp = await client.patch(
+                f"/api/projects/{project_id}",
+                json={"reference_song": "La Mona Jiménez"},
+            )
+            assert patch_resp.status_code == 422
+            assert ARTIST_REJECTION_MESSAGE in patch_resp.text
+
+            # Stored value unchanged (RQ-PRJ-02: reject without persisting)
+            get_resp = await client.get(f"/api/projects/{project_id}")
+            assert get_resp.json()["reference_song"] == "Bachata Rosa"
 
     @pytest.mark.asyncio
     async def test_create_project_returns_422_on_invalid(
@@ -607,7 +762,7 @@ class TestIntegration:
                     "genre": "pop",
                     "mood": "feliz",
                     "voice": "female",
-                    "reference_song": "Cancion de Ejemplo",
+                    "reference_song": "Cancion Ejemplo",
                 },
             )
             assert create_resp.status_code == 201
@@ -624,7 +779,7 @@ class TestIntegration:
             get_resp = await client.get(f"/api/projects/{project_id}")
             assert get_resp.status_code == 200
             assert len(get_resp.json()["fragments"]) == 1
-            assert get_resp.json()["reference_song"] == "Cancion de Ejemplo"
+            assert get_resp.json()["reference_song"] == "Cancion Ejemplo"
 
             # 4. Preview
             with patch("app.projects.project_worker", new_callable=AsyncMock):

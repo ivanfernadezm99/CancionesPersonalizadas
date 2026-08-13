@@ -335,8 +335,9 @@ class TestStreamEndpoint:
         job_id: str,
     ) -> None:
         """Create a minimal paid project and link the job to it."""
-        import aiosqlite
         from datetime import datetime, timezone
+
+        import aiosqlite
 
         from app.projects.store import init_schema
 

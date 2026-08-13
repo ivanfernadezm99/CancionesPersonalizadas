@@ -18,7 +18,6 @@ from httpx import ASGITransport, AsyncClient
 
 from app.models import GenerateRequest
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
@@ -85,8 +84,9 @@ async def _create_project_and_link(
     status: str = "paid",
 ) -> None:
     """Create a project row and link it to a job."""
-    from app.projects.store import init_schema
     from datetime import datetime, timezone
+
+    from app.projects.store import init_schema
 
     conn = await aiosqlite.connect(db_path)
     conn.row_factory = aiosqlite.Row

@@ -216,8 +216,10 @@ class TestStreamEndpoint:
             (out_dir / "final.mp3").write_bytes(b"MP3 audio data here")
 
             # Create paid project and link job
-            import aiosqlite
             from datetime import datetime, timezone
+
+            import aiosqlite
+
             from app.projects.store import init_schema
 
             conn = await aiosqlite.connect(settings.DB_PATH)

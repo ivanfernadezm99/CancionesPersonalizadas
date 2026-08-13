@@ -152,17 +152,80 @@ async def test_reference_song_only_propagates_to_lyrics_and_metadata(
 
             await job_worker(job_id)
 
+            # RQ-RS-06: "Coldplay - Yellow" is sanitized to "Yellow" before
+            # reaching lyrics and the voice prompt.
             _, kwargs = mock_lyrics.call_args
-            assert kwargs["reference_song"] == REF_SONG
+            assert kwargs["reference_song"] == "Yellow"
             assert kwargs["reference_description"] is None
 
             _, prompt_kwargs = mock_prompt.call_args
             assert prompt_kwargs["reference_description"] is None
-            assert prompt_kwargs["reference_song"] == REF_SONG
+            assert prompt_kwargs["reference_song"] == "Yellow"
 
+            # RQ-RS-04: metadata persists the ORIGINAL value, not the sanitized one.
             meta = await capture_metadata(job_id, db_path)
             assert meta["reference_song"] == REF_SONG
             assert meta["reference_description"] is None
+    finally:
+        settings.DB_PATH = original_db
+        settings.OUTPUT_DIR = original_output
+
+
+@pytest.mark.asyncio
+async def test_artist_only_reference_sanitized_to_none(
+    db_path: str,
+    tmp_path: Path,
+) -> None:
+    """Artist-only reference_song must sanitize to None in lyrics and prompt."""
+    from app.config import settings
+
+    original_db = settings.DB_PATH
+    original_output = settings.OUTPUT_DIR
+    try:
+        settings.DB_PATH = db_path
+        settings.OUTPUT_DIR = str(tmp_path / "output")
+
+        request = make_request(reference_song="Los Palmeras")
+        job_id = await create_job(request, db_path=db_path)
+
+        out_dir = Path(settings.OUTPUT_DIR) / job_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        with (
+            patch("app.jobs.worker.lyrics_generate", new_callable=AsyncMock) as mock_lyrics,
+            patch("app.jobs.worker.build_prompt", return_value="test prompt") as mock_prompt,
+            patch("app.jobs.worker.music_generate", new_callable=AsyncMock) as mock_music,
+            patch("app.jobs.worker.extend_duration") as mock_extend,
+        ):
+            from app.models import LyricsResult
+            from app.music.durext import ExtendResult
+
+            mock_lyrics.return_value = LyricsResult(
+                verses=[{"number": 1, "lines": ["a", "b", "c", "d"]}],
+                chorus={"lines": ["e", "f", "g", "h"]},
+                title_suggestion="Mi Amor",
+                provider="openai",
+            )
+            mock_music.return_value = out_dir / "generated.mp3"
+            (out_dir / "generated.mp3").write_bytes(b"MP3 content")
+            mock_extend.return_value = ExtendResult(
+                path=out_dir / "final.mp3",
+                extended=True,
+            )
+
+            await job_worker(job_id)
+
+            # No usable reference → no song token reaches lyrics or the prompt,
+            # and the artist name never leaks into them.
+            _, kwargs = mock_lyrics.call_args
+            assert kwargs["reference_song"] is None
+
+            _, prompt_kwargs = mock_prompt.call_args
+            assert prompt_kwargs["reference_song"] is None
+
+            # Metadata keeps the original for auditability.
+            meta = await capture_metadata(job_id, db_path)
+            assert meta["reference_song"] == "Los Palmeras"
     finally:
         settings.DB_PATH = original_db
         settings.OUTPUT_DIR = original_output

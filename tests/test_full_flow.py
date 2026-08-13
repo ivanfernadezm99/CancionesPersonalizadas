@@ -11,7 +11,6 @@ Adds its own ``mock_payment_gateway`` fixture for the POSBackend proxy.
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any
 
 import pytest
@@ -37,7 +36,9 @@ def mock_payment_gateway() -> respx.MockRouter:
 
 
 class TestFullProjectFlow:
-    """Full end-to-end project flow: create → fragments → preview → checkout → webhook → final → stream."""
+    """Full end-to-end project flow: create → fragments → preview → checkout →
+    webhook → final → stream.
+    """
 
     SAMPLE_PROJECT = {
         "recipient": "María",
@@ -48,7 +49,14 @@ class TestFullProjectFlow:
         "reference_song": "El Amor - Tito La Rosa",
     }
 
-    SAMPLE_FRAGMENT = {"fragment": {"text": "María, desde que te conocí mi vida cambió por completo. Cada día a tu lado es una aventura nueva."}}
+    SAMPLE_FRAGMENT = {
+        "fragment": {
+            "text": (
+                "María, desde que te conocí mi vida cambió por completo. "
+                "Cada día a tu lado es una aventura nueva."
+            )
+        }
+    }
 
     @pytest.mark.asyncio
     async def test_full_flow(
@@ -185,13 +193,16 @@ class TestFullProjectFlow:
             # 9. VERIFY PREVIEW STREAM (still accessible after payment)
             # ═══════════════════════════════════════════════════════════════
             resp = await test_app.get(f"/api/stream/{final_job_id}?preview=true")
-            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+            assert resp.status_code == 206, (
+                f"Expected 206, got {resp.status_code}: {resp.text}"
+            )
             assert resp.headers.get("X-Freemium-Preview") == "true"
 
             # ═══════════════════════════════════════════════════════════════
             # 10. VERIFY JOB TRANSITIONS
             # ═══════════════════════════════════════════════════════════════
-            from app.jobs.store import get_connection, init_db as init_jobs_db
+            from app.jobs.store import get_connection
+            from app.jobs.store import init_db as init_jobs_db
 
             conn = await get_connection(test_db_path)
             try:
@@ -214,18 +225,20 @@ class TestFullProjectFlow:
         test_app: AsyncClient,
         test_db_path: str,
         sample_generate_request: dict[str, str],  # noqa: ARG002
-        monkeypatch: pytest.MonkeyPatch,
+        monkeypatch: pytest.MonkeyPatch,  # noqa: ARG002
     ) -> None:
         """POST /api/projects/{id}/final returns 402 if project is not paid."""
         # Create a project (no fragment, direct DB approach)
         import uuid
         from datetime import datetime, timezone
 
-        from app.models import SongProjectCreate
         from app.projects import store
 
         project_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
+        # Ensure the schema exists before inserting directly (create_project
+        # initializes it on first write; direct inserts must too).
+        await store.init_schema(test_db_path)
         conn = await store._get_conn(test_db_path)
         try:
             await conn.execute(

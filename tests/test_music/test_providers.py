@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.music.openclaw import OpenClawClient
 from app.music.providers import (
     BaseMusicProvider,
     MusicGenerationError,
     OpenClawProvider,
     SunoError,
     SunoProvider,
+    _translate_suno_error,
 )
-
+from app.tag_sanitizer import ARTIST_REJECTION_MESSAGE
 
 # ── Phase 1: Provider Foundation (RED→GREEN) ───────────────────────────────
 
@@ -42,12 +42,12 @@ class TestBaseMusicProvider:
         class ConcreteProvider(BaseMusicProvider):
             async def generate(
                 self,
-                lyrics: str,
-                voice_prompt: str,
+                lyrics: str,  # noqa: ARG002
+                voice_prompt: str,  # noqa: ARG002
                 *,
-                model: str | None = None,
-                reference_audio: str | None = None,
-                job_id: str | None = None,
+                model: str | None = None,  # noqa: ARG002
+                reference_audio: str | None = None,  # noqa: ARG002
+                job_id: str | None = None,  # noqa: ARG002
             ) -> Path:
                 return Path("/tmp/test.mp3")
 
@@ -60,8 +60,8 @@ class TestBaseMusicProvider:
         """Base URL should have trailing slash stripped."""
         class ConcreteProvider(BaseMusicProvider):
             async def generate(
-                self, lyrics, voice_prompt, *, model=None,
-                reference_audio=None, job_id=None,
+                self, lyrics, voice_prompt, *, model=None,  # noqa: ARG002
+                reference_audio=None, job_id=None,  # noqa: ARG002
             ) -> Path:
                 return Path("/tmp/test.mp3")
 
@@ -366,6 +366,109 @@ class TestSunoInvoke:
                 await provider._invoke(lyrics="Test", prompt="Test")
 
 
+class TestTranslateSunoError:
+    """Tests for _translate_suno_error() (RQ-SUNO-01, design decision 7)."""
+
+    @pytest.mark.parametrize(
+        "raw_msg",
+        [
+            "Your tags contain artist name: Juan Luis Guerra",
+            "Tags contain artist name",
+            "Suno invoke rejected (code=400): your tags contain the artist.",
+            "artist name is not allowed in tags",
+        ],
+    )
+    def test_artist_pattern_matches_spanish(self, raw_msg: str) -> None:
+        """Messages naming an artist (IGNORECASE) translate to Spanish."""
+        assert _translate_suno_error(raw_msg) == ARTIST_REJECTION_MESSAGE
+
+    @pytest.mark.parametrize(
+        "raw_msg",
+        [
+            "Suno generation failed: server error",
+            "Too many requests",
+            "Suno invoke failed: HTTP 500 — internal error",
+            "Invalid parameter: instrumental cannot be null",
+        ],
+    )
+    def test_other_errors_preserved(self, raw_msg: str) -> None:
+        """Any other Suno message must be preserved unchanged."""
+        assert _translate_suno_error(raw_msg) == raw_msg
+
+
+class TestSunoInvokeArtistRejection:
+    """Suno 400 artist-rejection raised translated (RQ-SUNO-01, RQ-JOB-02/06)."""
+
+    @pytest.mark.asyncio
+    async def test_http_400_artist_rejection_translated(self) -> None:
+        """HTTP 400 with artist-naming body raises the friendly Spanish message."""
+        import respx
+
+        provider = SunoProvider(api_key="sk-test", base_url="http://suno.test")
+
+        async with respx.mock:
+            respx.post("http://suno.test/api/v1/generate").respond(
+                400,
+                json={"message": "Your tags contain artist name: Juan Luis Guerra"},
+            )
+
+            with pytest.raises(SunoError) as exc:
+                await provider._invoke(lyrics="Test", prompt="Test")
+            assert str(exc.value) == ARTIST_REJECTION_MESSAGE
+
+    @pytest.mark.asyncio
+    async def test_http_500_unrelated_error_preserved(self) -> None:
+        """HTTP 500 with an unrelated body keeps the original message."""
+        import respx
+
+        provider = SunoProvider(api_key="sk-test", base_url="http://suno.test")
+
+        async with respx.mock:
+            respx.post("http://suno.test/api/v1/generate").respond(
+                500, json={"message": "Internal server error"},
+            )
+
+            with pytest.raises(SunoError) as exc:
+                await provider._invoke(lyrics="Test", prompt="Test")
+            assert "Internal server error" in str(exc.value)
+            assert ARTIST_REJECTION_MESSAGE not in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_biz_code_400_artist_rejection_translated(self) -> None:
+        """code=400 business rejection naming an artist is translated."""
+        import respx
+
+        provider = SunoProvider(api_key="sk-test", base_url="http://suno.test")
+
+        async with respx.mock:
+            respx.post("http://suno.test/api/v1/generate").respond(
+                200,
+                json={"code": 400, "msg": "Your tags contain artist name: Los Palmeras"},
+            )
+
+            with pytest.raises(SunoError) as exc:
+                await provider._invoke(lyrics="Test", prompt="Test")
+            assert str(exc.value) == ARTIST_REJECTION_MESSAGE
+
+    @pytest.mark.asyncio
+    async def test_biz_code_400_unrelated_error_preserved(self) -> None:
+        """code=400 with an unrelated message keeps the original text."""
+        import respx
+
+        provider = SunoProvider(api_key="sk-test", base_url="http://suno.test")
+
+        async with respx.mock:
+            respx.post("http://suno.test/api/v1/generate").respond(
+                200,
+                json={"code": 400, "msg": "invalid prompt length"},
+            )
+
+            with pytest.raises(SunoError) as exc:
+                await provider._invoke(lyrics="Test", prompt="Test")
+            assert "invalid prompt length" in str(exc.value)
+            assert ARTIST_REJECTION_MESSAGE not in str(exc.value)
+
+
 class TestSunoPoll:
     """Tests for SunoProvider._poll()."""
 
@@ -593,7 +696,7 @@ class TestSunoGenerate:
             assert payload.get("uploadUrl") == "http://localhost/ref-audio/42/reference.mp3"
 
     @pytest.mark.asyncio
-    async def test_generate_health_check_fail_stops_early(self, tmp_path: Path) -> None:
+    async def test_generate_health_check_fail_stops_early(self, tmp_path: Path) -> None:  # noqa: ARG002
         """SunoProvider.generate() should fail before invoking if health check fails."""
         import respx
 

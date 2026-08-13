@@ -14,7 +14,7 @@ import pytest
 
 from app.music.clipchain import (
     ENERGY_MAP,
-    AllProvidersUnavailable,
+    AllProvidersUnavailableError,
     ClipSection,
     _get_energy_descriptor,
     generate_clips_parallel,
@@ -22,7 +22,6 @@ from app.music.clipchain import (
     split_lyrics,
     stitch_clips,
 )
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Fixtures
@@ -341,8 +340,8 @@ class TestStitchClips:
         assert end_rms <= mid_rms + 1, "Fade-out should reduce volume at end"
 
     def test_all_none_raises(self, tmp_path: Path) -> None:
-        """All None paths should raise AllProvidersUnavailable."""
-        with pytest.raises(AllProvidersUnavailable, match="All clip generation"):
+        """All None paths should raise AllProvidersUnavailableError."""
+        with pytest.raises(AllProvidersUnavailableError, match="All clip generation"):
             stitch_clips(
                 clip_paths=[None, None, None],
                 output_path=tmp_path / "final.mp3",
@@ -532,7 +531,7 @@ class TestGenerateClipsParallel:
 
     @pytest.mark.asyncio
     async def test_partial_success(
-        self, tmp_path: Path, valid_mp3_bytes: bytes,
+        self, tmp_path: Path, valid_mp3_bytes: bytes,  # noqa: ARG002
     ) -> None:
         """Mix of success/failure should return [Path, None, Path]."""
         sections = [
@@ -553,7 +552,7 @@ class TestGenerateClipsParallel:
 
             mock_client = MagicMock()
 
-            async def conditional_invoke(*, lyrics: str, **kwargs) -> str:  # noqa: ANN202, ANN003
+            async def conditional_invoke(*, lyrics: str, **kwargs) -> str:  # noqa: ANN202, ANN003, ARG001
                 if "fail" in lyrics:
                     raise OpenClawError("generation failed")
                 return "task-ok"
@@ -699,7 +698,7 @@ Falla también"""
             )
             mock_client_cls.return_value = mock_client
 
-            with pytest.raises(AllProvidersUnavailable):
+            with pytest.raises(AllProvidersUnavailableError):
                 await generate_stitched(
                     lyrics=lyrics,
                     voice_prompt="romántica",

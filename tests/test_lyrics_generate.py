@@ -16,7 +16,7 @@ class TestBuildUserPromptReferenceSong:
     """Tests for build_user_prompt with reference_song param."""
 
     def test_with_reference_song_includes_style_guidance(self) -> None:
-        """build_user_prompt with reference_song should include style hint."""
+        """build_user_prompt with reference_song should include sanitized style hint."""
         prompt = build_user_prompt(
             recipient="María",
             relationship="pareja",
@@ -26,8 +26,22 @@ class TestBuildUserPromptReferenceSong:
             reference_song="Bachata Rosa - Juan Luis Guerra",
         )
         assert "Bachata Rosa" in prompt
-        assert "Juan Luis Guerra" in prompt
+        assert "Juan Luis Guerra" not in prompt
         assert "Inspírate" in prompt or "referencia" in prompt.lower()
+
+    def test_artist_only_reference_yields_no_style_guidance(self) -> None:
+        """Artist-only reference_song should inject no reference guidance (RQ-LYR-06)."""
+        prompt = build_user_prompt(
+            recipient="María",
+            relationship="pareja",
+            occasion="aniversario",
+            genre="bachata",
+            mood="romántica",
+            reference_song="Los Palmeras",
+        )
+        assert "Referencia musical" not in prompt
+        assert "Los Palmeras" not in prompt
+        assert "Inspírate" not in prompt
 
     def test_without_reference_song_is_unchanged(self) -> None:
         """build_user_prompt without reference_song should not include style hint."""
@@ -210,9 +224,9 @@ async def test_generate_with_reference_song_passes_through(
         assert got is not None
 
         prompt_arg = mock_cascade.call_args[0][1]
-        # Cascade receives the full prompt which includes the reference song
+        # Cascade receives the sanitized song token, never the artist name
         assert "Bachata Rosa" in prompt_arg
-        assert "Juan Luis Guerra" in prompt_arg
+        assert "Juan Luis Guerra" not in prompt_arg
 
 
 class TestIdeaSeed:

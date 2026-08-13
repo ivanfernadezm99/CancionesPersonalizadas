@@ -55,14 +55,23 @@ class TestBuildPrompt:
             build_prompt("", "bachata", "romántica")
 
     def test_with_reference_song_includes_style_text(self) -> None:
-        """build_prompt with reference_song should include style reference."""
+        """build_prompt with reference_song should include sanitized style reference."""
         prompt = build_prompt(
             "female", "bachata", "romántica",
             reference_song="Bachata Rosa - Juan Luis Guerra",
         )
         assert "Inspirada en el estilo de" in prompt
         assert "Bachata Rosa" in prompt
-        assert "Juan Luis Guerra" in prompt
+        assert "Juan Luis Guerra" not in prompt
+
+    def test_artist_only_reference_appends_no_style(self) -> None:
+        """Artist-only reference_song should append NO style modifier (RQ-VOI-05)."""
+        prompt = build_prompt(
+            "male", "cumbia", "festiva",
+            reference_song="Los Palmeras",
+        )
+        assert "Inspirada en el estilo de" not in prompt
+        assert "masculino" in prompt.lower() or "cantante masculino" in prompt.lower()
 
     def test_without_reference_song_is_unchanged(self) -> None:
         """build_prompt without reference_song should not include style text."""

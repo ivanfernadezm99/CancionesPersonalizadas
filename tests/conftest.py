@@ -130,7 +130,7 @@ def mock_openclaw() -> respx.MockRouter:
 
     router.get("http://download.example.com/song.mp3").respond(
         200,
-        content=b"\xff\xfb\x90\x00" + b"MP3 data from OpenClaw for integration tests",
+        content=b"\xff\xfb\x90\x00" + b"X" * 4092,
     )
 
     return router
@@ -240,6 +240,10 @@ async def test_app(
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key-for-integration")
     monkeypatch.setattr(settings, "OPENCLAW_TOKEN", "test-openclaw-token")
     monkeypatch.setattr(settings, "MAX_CONCURRENT_JOBS", 5)
+    # The local .env sets MUSIC_PROVIDER=suno, but this fixture mocks the
+    # OpenClaw gateway. Force openclaw so pipeline tests stay deterministic;
+    # Suno-specific behavior is covered by dedicated provider mocks.
+    monkeypatch.setattr(settings, "MUSIC_PROVIDER", "openclaw")
 
     # Reset rate-limit counter
     monkeypatch.setattr("app.main._active_requests", 0)

@@ -152,16 +152,24 @@ class TestGeminiProvider:
         """generate() should return LyricsResult on success."""
         provider = GeminiProvider(api_key="test-key")
 
-        mock_model = AsyncMock()
-        mock_response = AsyncMock()
-        mock_response.text = f"```json\n{valid_lyrics_json}\n```"
-        mock_model.generate_content_async = AsyncMock(return_value=mock_response)
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json = MagicMock(return_value={
+            "candidates": [{
+                "content": {
+                    "parts": [{"text": f"```json\n{valid_lyrics_json}\n```"}],
+                },
+            }],
+        })
 
-        with patch.object(provider, "_get_model", return_value=mock_model):
+        with patch.object(provider._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+
             result = await provider.generate(sample_prompt)
             assert result is not None
             assert isinstance(result, LyricsResult)
             assert result.provider == "gemini"
+            assert result.title_suggestion == "María, Mi Amor"
 
     @pytest.mark.asyncio
     async def test_generate_returns_none_on_error(
@@ -170,10 +178,17 @@ class TestGeminiProvider:
         """generate() should return None on API errors."""
         provider = GeminiProvider(api_key="test-key")
 
-        mock_model = AsyncMock()
-        mock_model.generate_content_async = AsyncMock(side_effect=Exception("API error"))
+        with patch.object(provider._client, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.side_effect = httpx.HTTPStatusError(
+                "500 Internal Server Error",
+                request=httpx.Request(
+                    "POST",
+                    "https://generativelanguage.googleapis.com/v1beta/models/"
+                    "gemini-flash-latest:generateContent?key=test-key",
+                ),
+                response=httpx.Response(500),
+            )
 
-        with patch.object(provider, "_get_model", return_value=mock_model):
             result = await provider.generate(sample_prompt)
             assert result is None
 

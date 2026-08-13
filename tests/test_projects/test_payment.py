@@ -15,7 +15,6 @@ import pytest
 import respx
 from httpx import ASGITransport, AsyncClient
 
-
 # ── Fixtures ───────────────────────────────────────────────────────────────────
 
 
@@ -39,7 +38,6 @@ def payment_settings(
     monkeypatch.setattr("app.main._active_requests", 0)
 
     # Reset JWKS fetcher to avoid stale state
-    from app.auth import _jwks_fetcher
 
     monkeypatch.setattr("app.auth._jwks_fetcher", None)
 

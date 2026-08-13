@@ -71,8 +71,9 @@ async def _create_paid_project_and_link(
     job_id: str,
 ) -> None:
     """Create a minimal paid project and link the job to it."""
-    from app.projects.store import init_schema
     from datetime import datetime, timezone
+
+    from app.projects.store import init_schema
 
     conn = await aiosqlite.connect(db_path)
     conn.row_factory = aiosqlite.Row

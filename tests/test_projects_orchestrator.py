@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models import SongProjectCreate, SongProjectUpdate
+from app.models import SongProjectCreate
 
 
 @pytest.fixture
@@ -80,18 +80,22 @@ class TestCreatePreviewJob:
     ) -> None:
         """create_preview_job() should create job and link it."""
         from app.projects import create_preview_job
-        from app.config import settings
 
         mock_settings = MagicMock()
         mock_settings.DB_PATH = str(tmp_path / "test.db")
         mock_settings.PREVIEW_TARGET_SECONDS = 30
 
-        with patch("app.projects.store.get_project", new_callable=AsyncMock) as mock_get, \
-             patch("app.projects.store.get_accumulated_story", new_callable=AsyncMock) as mock_story, \
-             patch("app.projects.create_job_record", new_callable=AsyncMock) as mock_create_job, \
-             patch("app.projects.store.link_project_job", new_callable=AsyncMock) as mock_link, \
-             patch("app.projects.project_worker", new_callable=AsyncMock) as mock_worker, \
-             patch("app.projects.settings", mock_settings):
+        with (
+            patch("app.projects.store.get_project", new_callable=AsyncMock) as mock_get,
+            patch(
+                "app.projects.store.get_accumulated_story",
+                new_callable=AsyncMock,
+            ) as mock_story,
+            patch("app.projects.create_job_record", new_callable=AsyncMock) as mock_create_job,
+            patch("app.projects.store.link_project_job", new_callable=AsyncMock) as mock_link,
+            patch("app.projects.project_worker", new_callable=AsyncMock) as mock_worker,
+            patch("app.projects.settings", mock_settings),
+        ):
 
             mock_get.return_value = sample_project_dict
             mock_story.return_value = "Nuestro primer viaje a la playa Esa noche de luna llena"
@@ -144,13 +148,18 @@ class TestCreateFinalJob:
         mock_settings.DB_PATH = str(tmp_path / "test.db")
         mock_settings.FINAL_TARGET_SECONDS = 150
 
-        with patch("app.projects.store.get_project", new_callable=AsyncMock) as mock_get, \
-             patch("app.projects.store.get_accumulated_story", new_callable=AsyncMock) as mock_story, \
-             patch("app.projects.create_job_record", new_callable=AsyncMock) as mock_create_job, \
-             patch("app.projects.update_status", new_callable=AsyncMock), \
-             patch("app.projects.store.link_project_job", new_callable=AsyncMock), \
-             patch("app.projects.project_worker", new_callable=AsyncMock), \
-             patch("app.projects.settings", mock_settings):
+        with (
+            patch("app.projects.store.get_project", new_callable=AsyncMock) as mock_get,
+            patch(
+                "app.projects.store.get_accumulated_story",
+                new_callable=AsyncMock,
+            ) as mock_story,
+            patch("app.projects.create_job_record", new_callable=AsyncMock) as mock_create_job,
+            patch("app.projects.update_status", new_callable=AsyncMock),
+            patch("app.projects.store.link_project_job", new_callable=AsyncMock),
+            patch("app.projects.project_worker", new_callable=AsyncMock),
+            patch("app.projects.settings", mock_settings),
+        ):
 
             mock_get.return_value = sample_project_dict
             mock_story.return_value = "Story text"
@@ -170,9 +179,9 @@ class TestProjectWorker:
         self, tmp_path: Path,
     ) -> None:
         """project_worker() should use lyria-3-clip-preview for preview jobs."""
+        from app.config import settings
         from app.jobs.store import get_connection, init_db
         from app.projects import project_worker
-        from app.config import settings
 
         original_db = settings.DB_PATH
         original_output = settings.OUTPUT_DIR
@@ -248,9 +257,9 @@ class TestProjectWorker:
         """Preview jobs must reach 'complete' (regression: standard path skipped
         the 'processing' status transition, so the state machine rejected
         music_generating → complete and the job silently failed)."""
+        from app.config import settings
         from app.jobs.store import get_connection, init_db
         from app.projects import project_worker
-        from app.config import settings
 
         original_db = settings.DB_PATH
         original_output = settings.OUTPUT_DIR
@@ -331,9 +340,9 @@ class TestProjectWorker:
         self, tmp_path: Path,
     ) -> None:
         """project_worker() should use final model and extend duration for final jobs."""
+        from app.config import settings
         from app.jobs.store import get_connection, init_db
         from app.projects import project_worker
-        from app.config import settings
 
         original_db = settings.DB_PATH
         original_output = settings.OUTPUT_DIR
@@ -412,9 +421,9 @@ class TestProjectWorker:
         self, tmp_path: Path,
     ) -> None:
         """project_worker() should pass reference_song to lyrics and voice."""
+        from app.config import settings
         from app.jobs.store import get_connection, init_db
         from app.projects import project_worker
-        from app.config import settings
 
         original_db = settings.DB_PATH
         original_output = settings.OUTPUT_DIR
@@ -449,10 +458,15 @@ class TestProjectWorker:
             await conn.commit()
             await conn.close()
 
-            with patch("app.projects.lyrics_generate", new_callable=AsyncMock) as mock_lyrics, \
-                 patch("app.projects.build_prompt", return_value="voice prompt") as mock_build_prompt, \
-                 patch("app.projects.music_generate", new_callable=AsyncMock) as mock_music, \
-                 patch("app.projects._format_lyrics_for_music", return_value="[Verse 1]\nlyrics"):
+            with (
+                patch("app.projects.lyrics_generate", new_callable=AsyncMock) as mock_lyrics,
+                patch(
+                    "app.projects.build_prompt",
+                    return_value="voice prompt",
+                ) as mock_build_prompt,
+                patch("app.projects.music_generate", new_callable=AsyncMock) as mock_music,
+                patch("app.projects._format_lyrics_for_music", return_value="[Verse 1]\nlyrics"),
+            ):
 
                 from app.models import LyricsResult
                 mock_lyrics.return_value = LyricsResult(
@@ -469,15 +483,16 @@ class TestProjectWorker:
 
                 await project_worker("worker-ref-song")
 
-                # Verify reference_song passed to lyrics_generate
+                # RQ-RS-06: "Bachata Rosa - Juan Luis Guerra" is sanitized to
+                # "Bachata Rosa" before reaching lyrics and the voice prompt.
                 mock_lyrics.assert_called_once()
                 lyrics_kwargs = mock_lyrics.call_args[1]
-                assert lyrics_kwargs.get("reference_song") == "Bachata Rosa - Juan Luis Guerra"
+                assert lyrics_kwargs.get("reference_song") == "Bachata Rosa"
 
-                # Verify reference_song passed to build_prompt
+                # Verify reference_song passed to build_prompt (sanitized)
                 mock_build_prompt.assert_called_once()
                 prompt_kwargs = mock_build_prompt.call_args[1]
-                assert prompt_kwargs.get("reference_song") == "Bachata Rosa - Juan Luis Guerra"
+                assert prompt_kwargs.get("reference_song") == "Bachata Rosa"
         finally:
             settings.DB_PATH = original_db
             settings.OUTPUT_DIR = original_output
@@ -493,9 +508,9 @@ class TestProjectWorkerChaining:
         from app.config import settings as app_settings
         app_settings.MUSIC_PROVIDER = "openclaw"
         """project_worker() should use generate_stitched when chaining_enabled in metadata."""
+        from app.config import settings
         from app.jobs.store import get_connection, init_db
         from app.projects import project_worker
-        from app.config import settings
 
         original_db = settings.DB_PATH
         original_output = settings.OUTPUT_DIR
@@ -567,10 +582,10 @@ class TestProjectWorkerChaining:
         self, tmp_path: Path,
     ) -> None:
         """project_worker() should use music_generate when chaining_enabled is false."""
-        from app.jobs.store import get_connection, init_db
-        from app.projects import project_worker
         from app.config import settings
+        from app.jobs.store import get_connection, init_db
         from app.music.durext import ExtendResult
+        from app.projects import project_worker
 
         original_db = settings.DB_PATH
         original_output = settings.OUTPUT_DIR
@@ -642,10 +657,10 @@ class TestProjectWorkerChaining:
     async def test_worker_chaining_sets_stitching_used_metadata(
         self, tmp_path: Path,
     ) -> None:
-        from app.jobs.store import get_connection, init_db
-        from app.jobs import get_job
-        from app.projects import project_worker
         from app.config import settings
+        from app.jobs import get_job
+        from app.jobs.store import get_connection, init_db
+        from app.projects import project_worker
         settings.MUSIC_PROVIDER = "openclaw"
 
         original_db = settings.DB_PATH

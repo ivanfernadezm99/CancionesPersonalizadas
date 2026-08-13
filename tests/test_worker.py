@@ -243,7 +243,8 @@ class TestLegacyVoiceNormalization:
                 (project_id, "María", "pareja", "bachata", "romántica", "duo", now, now),
             )
             await conn.execute(
-                "INSERT INTO story_fragments (project_id, fragment, sort_order, created_at) VALUES (?, ?, 1, ?)",
+                "INSERT INTO story_fragments (project_id, fragment, sort_order, created_at) "
+                "VALUES (?, ?, 1, ?)",
                 (project_id, "Nuestro primer viaje", now),
             )
             await conn.commit()
@@ -285,7 +286,8 @@ class TestLegacyVoiceNormalization:
                 (project_id, "Ana", "hija", "pop", "alegre", "children", now, now),
             )
             await conn.execute(
-                "INSERT INTO story_fragments (project_id, fragment, sort_order, created_at) VALUES (?, ?, 1, ?)",
+                "INSERT INTO story_fragments (project_id, fragment, sort_order, created_at) "
+                "VALUES (?, ?, 1, ?)",
                 (project_id, "Un día especial", now),
             )
             await conn.commit()
@@ -328,7 +330,8 @@ class TestLegacyVoiceNormalization:
                  "canción para mi madre", now, now),
             )
             await conn.execute(
-                "INSERT INTO story_fragments (project_id, fragment, sort_order, created_at) VALUES (?, ?, 1, ?)",
+                "INSERT INTO story_fragments (project_id, fragment, sort_order, created_at) "
+                "VALUES (?, ?, 1, ?)",
                 (project_id, "Un recuerdo", now),
             )
             await conn.commit()
@@ -349,14 +352,14 @@ class TestLegacyVoiceNormalization:
         self, tmp_path: Path,
     ) -> None:
         """project_worker should pass params.idea into lyrics_generate (T21)."""
+        import uuid
+
+        import aiosqlite
+
         from app.config import settings
         from app.models import LyricsResult
         from app.projects import create_final_job, project_worker
         from app.projects import store as project_store
-
-        import uuid
-
-        import aiosqlite
 
         db_path = str(tmp_path / "projects.db")
         out_dir = tmp_path / "output"
@@ -378,7 +381,8 @@ class TestLegacyVoiceNormalization:
                  "canción de agradecimiento", now, now),
             )
             await conn.execute(
-                "INSERT INTO story_fragments (project_id, fragment, sort_order, created_at) VALUES (?, ?, 1, ?)",
+                "INSERT INTO story_fragments (project_id, fragment, sort_order, created_at) "
+                "VALUES (?, ?, 1, ?)",
                 (project_id, "Un recuerdo especial", now),
             )
             await conn.commit()
