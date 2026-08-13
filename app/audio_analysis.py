@@ -7,8 +7,7 @@ uploaded MP3 to generate a style description for Lyria 3 music generation.
 from __future__ import annotations
 
 import logging
-import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -151,7 +150,11 @@ def _build_style_description(result: AudioAnalysisResult) -> str:
         parts.append("canción equilibrada, interpretación expresiva")
 
     # Tempo
-    tempo_map = {"lento": "tempo lento y pausado", "medio": "tempo moderado", "rápido": "tempo rápido y dinámico"}
+    tempo_map = {
+        "lento": "tempo lento y pausado",
+        "medio": "tempo moderado",
+        "rápido": "tempo rápido y dinámico",
+    }
     parts.append(tempo_map.get(result.estimated_tempo, "tempo moderado"))
 
     # Duration context

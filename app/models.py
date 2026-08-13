@@ -6,6 +6,26 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.tag_sanitizer import ARTIST_REJECTION_MESSAGE, sanitize_reference_song
+
+
+def _validate_reference_song(v: str | None) -> str | None:
+    """Sanitize reference_song and reject artist-only values (RQ-PRJ-01/02).
+
+    Empty/absent values pass through unchanged (RQ-PRJ-01 empty-accepted).
+    Non-empty values are sanitized through the shared tag sanitizer: safe
+    ``"Song - Artist"`` / ``"Song de Artist"`` / ``"Song (Artist)"`` patterns
+    are stripped to the song token; a non-empty value that sanitizes to
+    ``None`` (artist-only or blocklist hit) raises ValueError → HTTP 422 with
+    the shared Spanish message.
+    """
+    if v is None or not v.strip():
+        return v
+    sanitized = sanitize_reference_song(v)
+    if sanitized is None:
+        raise ValueError(ARTIST_REJECTION_MESSAGE)
+    return sanitized
+
 
 def _validate_voice(v: str | None) -> str | None:
     """Fail-fast voice validation against the registry (RQ-VOICE-02, D5).
@@ -37,22 +57,22 @@ class GenerateRequest(BaseModel):
     occasion: str = Field(..., min_length=1, max_length=100, description="Occasion for the song")
     genre: str = Field(..., min_length=1, max_length=50, description="Music genre")
     mood: str = Field(..., min_length=1, max_length=50, description="Song mood")
-    story: str | None = Field(None, max_length=2000, description="Optional personal story")
+    story: str | None = Field(default=None, max_length=2000, description="Optional personal story")
     voice: str = Field(
         default="female", min_length=1, max_length=50, description="Voice ID for generation"
     )
     reference_song: str | None = Field(
-        None,
+        default=None,
         max_length=200,
-        description="Optional reference song for style (e.g. 'Bachata Rosa - Juan Luis Guerra')",
+        description="Optional reference song for style (e.g. 'Bachata Rosa')",
     )
     reference_description: str | None = Field(
-        None,
+        default=None,
         max_length=1000,
         description="Auto-generated style description from audio reference",
     )
     idea: str | None = Field(
-        None,
+        default=None,
         max_length=2000,
         description="Optional free-text thematic seed for lyrics (RQ-LYR-07)",
     )
@@ -84,7 +104,7 @@ class LyricsResult(BaseModel):
 
     verses: list[Verse] = Field(..., min_length=1, max_length=5, description="Song verses")
     chorus: Chorus = Field(..., description="Song chorus")
-    bridge: Bridge | None = Field(None, description="Optional bridge section")
+    bridge: Bridge | None = Field(default=None, description="Optional bridge section")
     language: str = Field(default="es", description="Language code")
     title_suggestion: str = Field(..., min_length=1, description="Suggested song title")
     provider: str = Field(..., description="LLM provider that generated the lyrics")
@@ -116,7 +136,7 @@ class JobStatusResponse(BaseModel):
     estimated_remaining_seconds: int = Field(
         default=0, ge=0, description="Estimated seconds remaining"
     )
-    error: str | None = Field(None, description="Error message if failed")
+    error: str | None = Field(default=None, description="Error message if failed")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Arbitrary metadata")
     created_at: str = Field(..., description="ISO 8601 creation timestamp")
     updated_at: str = Field(..., description="ISO 8601 last update timestamp")
@@ -145,7 +165,7 @@ class SongProjectCreate(BaseModel):
     reference_song: str | None = Field(
         None,
         max_length=200,
-        description="Optional reference song for style (e.g. 'Bachata Rosa - Juan Luis Guerra')",
+        description="Optional reference song for style (e.g. 'Bachata Rosa')",
     )
     reference_description: str | None = Field(
         None,
@@ -162,6 +182,7 @@ class SongProjectCreate(BaseModel):
     )
 
     _validate_voice = field_validator("voice")(_validate_voice)
+    _validate_reference_song = field_validator("reference_song")(_validate_reference_song)
 
 
 class StoryFragmentAdd(BaseModel):
@@ -184,20 +205,21 @@ class ReplaceFragmentsRequest(BaseModel):
 class SongProjectUpdate(BaseModel):
     """Update project settings or add a story fragment."""
 
-    genre: str | None = Field(None, min_length=1, max_length=50)
-    mood: str | None = Field(None, min_length=1, max_length=50)
-    voice: str | None = Field(None, min_length=1, max_length=50)
-    reference_song: str | None = Field(None, max_length=200)
-    reference_description: str | None = Field(None, max_length=1000)
+    genre: str | None = Field(default=None, min_length=1, max_length=50)
+    mood: str | None = Field(default=None, min_length=1, max_length=50)
+    voice: str | None = Field(default=None, min_length=1, max_length=50)
+    reference_song: str | None = Field(default=None, max_length=200)
+    reference_description: str | None = Field(default=None, max_length=1000)
     idea: str | None = Field(
-        None, max_length=2000, description="Optional free-text idea (RQ-IDEA-01)"
+        default=None, max_length=2000, description="Optional free-text idea (RQ-IDEA-01)"
     )
     chaining_enabled: bool | None = Field(
-        None, description="Enable clip chaining for final song generation"
+        default=None, description="Enable clip chaining for final song generation"
     )
     fragment: StoryFragmentAdd | None = None
 
     _validate_voice = field_validator("voice")(_validate_voice)
+    _validate_reference_song = field_validator("reference_song")(_validate_reference_song)
 
 
 class StoryFragmentResponse(BaseModel):
@@ -273,7 +295,9 @@ class PaymentConfirmRequest(BaseModel):
     project_id: str = Field(..., description="Project being paid for")
     payment_id: str = Field(..., description="Payment transaction ID")
     status: str = Field(..., description="Payment status (approved/rejected/etc)")
-    metadata: dict[str, str] | None = Field(None, description="Optional metadata from gateway")
+    metadata: dict[str, str] | None = Field(
+        default=None, description="Optional metadata from gateway"
+    )
 
 
 class WebhookResponse(BaseModel):

@@ -68,7 +68,7 @@ async def create_checkout(project_id: str) -> CheckoutResponse:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail={"error": "payment_gateway_unavailable"},
-            )
+            ) from None
 
     # Update project status to payment_pending
     await store.update_project_status(

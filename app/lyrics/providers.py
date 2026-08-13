@@ -17,7 +17,7 @@ import httpx
 from app.models import Bridge, Chorus, LyricsResult, Verse
 
 if TYPE_CHECKING:
-    import google.generativeai as genai
+    pass
 
 logger = logging.getLogger(__name__)
 

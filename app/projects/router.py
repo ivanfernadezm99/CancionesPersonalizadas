@@ -9,11 +9,12 @@ from __future__ import annotations
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
-from app.audio_analysis import analyze_audio
+from app.audio_analysis import AudioAnalysisError, analyze_audio
 from app.lyrics import generate as lyrics_generate
 from app.lyrics.providers import LyricsGenerationError
 from app.models import (
@@ -21,23 +22,22 @@ from app.models import (
     CheckoutResponse,
     JobCreateResponse,
     LyricsResult,
+    ProjectPreview,
     ReplaceFragmentsRequest,
     SongProjectCreate,
     SongProjectResponse,
     SongProjectUpdate,
     StoryFragmentResponse,
-    ProjectPreview,
 )
-from app.projects import create_final_job, create_preview_job
+from app.projects import create_final_job, create_preview_job, ref_audio, store
 from app.projects import create_project as orch_create_project
-from app.projects import ref_audio, store
 from app.projects.draft import normalize_draft
-from app.projects.payment import create_checkout, webhook_router
+from app.projects.payment import create_checkout
 
 router = APIRouter(prefix="/api/projects")
 
 
-def _project_to_response(project: dict) -> SongProjectResponse:
+def _project_to_response(project: dict[str, Any]) -> SongProjectResponse:
     """Convert a raw project dict from store to a SongProjectResponse."""
     fragments = [
         StoryFragmentResponse(
@@ -81,7 +81,7 @@ def _project_to_response(project: dict) -> SongProjectResponse:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_project(data: SongProjectCreate) -> dict:
+async def create_project(data: SongProjectCreate) -> dict[str, Any]:
     """Create a new song project.
 
     Returns the project ID and status.
@@ -198,12 +198,12 @@ async def create_preview(project_id: str) -> JobCreateResponse:
                     "error": "no_story_fragments",
                     "message": "Add at least one story fragment before generating",
                 },
-            )
+            ) from exc
         if "not found" in error_msg:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"error": "project_not_found", "project_id": project_id},
-            )
+            ) from exc
         raise
 
 
@@ -246,12 +246,12 @@ async def create_final(project_id: str) -> JobCreateResponse:
                     "error": "no_story_fragments",
                     "message": "Add at least one story fragment before generating",
                 },
-            )
+            ) from exc
         if "not found" in error_msg:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"error": "project_not_found", "project_id": project_id},
-            )
+            ) from exc
         raise
 
 
@@ -290,25 +290,25 @@ async def lyrics_draft(project_id: str) -> LyricsResult:
             reference_song=project.get("reference_song"),
             reference_description=project.get("reference_description"),
         )
-    except LyricsGenerationError:
+    except LyricsGenerationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
                 "error": "all_llm_providers_unavailable",
                 "message": "all LLM providers unavailable",
             },
-        )
+        ) from exc
 
     try:
         return normalize_draft(result)
-    except LyricsGenerationError:
+    except LyricsGenerationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
                 "error": "all_llm_providers_unavailable",
                 "message": "all LLM providers unavailable",
             },
-        )
+        ) from exc
 
 
 @router.post("/{project_id}/reference-audio")
@@ -355,7 +355,7 @@ async def upload_reference_audio(
         # Analyze
         result = analyze_audio(tmp_path)
 
-        if hasattr(result, "error"):
+        if isinstance(result, AudioAnalysisError):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={"error": "analysis_failed", "detail": result.detail},

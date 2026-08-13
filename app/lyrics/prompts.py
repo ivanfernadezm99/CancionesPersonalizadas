@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Final
 
+from app.tag_sanitizer import sanitize_reference_song
+
 SYSTEM_PROMPT: Final[str] = (
     "Eres un compositor de canciones románticas en español. "
     "Genera letras de canciones con estructura poética y rima "
@@ -134,10 +136,15 @@ def build_user_prompt(
         )
 
     if reference_song:
-        parts.append(
-            f"Referencia musical: {reference_song}. Inspírate en el estilo musical "
-            f"de esta canción para la composición, manteniendo la esencia romántica."
-        )
+        # Generation-time guard (RQ-LYR-04/06, RQ-TAG-04): use the sanitized
+        # song token so the LLM never echoes an artist name into lyrics that
+        # reach Suno. A "no usable reference" result injects no guidance.
+        song = sanitize_reference_song(reference_song)
+        if song:
+            parts.append(
+                f"Referencia musical: {song}. Inspírate en el estilo musical "
+                f"de esta canción para la composición, manteniendo la esencia romántica."
+            )
 
     if reference_description:
         parts.append(

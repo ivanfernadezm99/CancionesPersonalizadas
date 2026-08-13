@@ -18,7 +18,6 @@ from fastapi.responses import Response, StreamingResponse
 
 from app.config import settings
 from app.jobs import get_job
-from app.stream import stream_generator
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +197,10 @@ async def stream_audio(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail={
                     "error": "payment_required",
-                    "message": "Full stream requires payment. Use ?preview=true for a free preview.",
+                    "message": (
+                        "Full stream requires payment. "
+                        "Use ?preview=true for a free preview."
+                    ),
                     "job_id": job_id,
                 },
             )

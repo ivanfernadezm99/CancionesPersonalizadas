@@ -25,6 +25,7 @@ To add a new voice type:
 from __future__ import annotations
 
 from app.models import VoiceConfig
+from app.tag_sanitizer import sanitize_reference_song
 from app.voice.registry import VOICE_REGISTRY, get_voice
 
 
@@ -73,5 +74,10 @@ def build_prompt(
     if reference_description:
         prompt += f" {reference_description}"
     elif reference_song:
-        prompt += f" Inspirada en el estilo de {reference_song}."
+        # Generation-time guard (RQ-VOI-05, RQ-TAG-04): sanitize before
+        # injecting so legacy stored values ("Song - Artist") never reach the
+        # Lyria/Suno prompt; a "no usable reference" result appends nothing.
+        song = sanitize_reference_song(reference_song)
+        if song:
+            prompt += f" Inspirada en el estilo de {song}."
     return prompt

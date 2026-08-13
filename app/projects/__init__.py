@@ -21,6 +21,7 @@ from app.music import extend_duration
 from app.music import generate as music_generate
 from app.music.clipchain import generate_stitched
 from app.projects import ref_audio, store
+from app.tag_sanitizer import sanitize_reference_song
 from app.voice import build_prompt
 
 logger = logging.getLogger(__name__)
@@ -219,6 +220,10 @@ async def project_worker(job_id: str) -> None:
         reference_song = metadata.get("reference_song")
         reference_description = metadata.get("reference_description")
         job_type = metadata.get("job_type", "preview")
+        # RQ-RS-06: sanitize the stored song token before it reaches
+        # lyrics/prompt (covers legacy projects stored before input
+        # validation). Completion metadata persists the ORIGINAL value.
+        sanitized_song = sanitize_reference_song(reference_song)
 
         params_dict = json.loads(job["params"])
         params = GenerateRequest(**params_dict)
@@ -237,7 +242,7 @@ async def project_worker(job_id: str) -> None:
             mood=params.mood,
             story=params.story,
             idea=getattr(params, "idea", None),
-            reference_song=reference_song,
+            reference_song=sanitized_song,
             reference_description=reference_description,
         )
 
@@ -247,7 +252,7 @@ async def project_worker(job_id: str) -> None:
             voice_id=params.voice,
             genre=params.genre,
             mood=params.mood,
-            reference_song=reference_song,
+            reference_song=sanitized_song,
             reference_description=reference_description,
         )
 

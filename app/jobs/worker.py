@@ -16,6 +16,7 @@ from app.lyrics import generate as lyrics_generate
 from app.models import GenerateRequest
 from app.music import extend_duration
 from app.music import generate as music_generate
+from app.tag_sanitizer import sanitize_reference_song
 from app.voice import build_prompt
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,10 @@ async def job_worker(job_id: str) -> None:
 
         ref_song = getattr(params, "reference_song", None)
         ref_desc = getattr(params, "reference_description", None)
+        # RQ-RS-06: sanitize the song token before it reaches lyrics/prompt.
+        # Metadata persists the ORIGINAL value (RQ-RS-04). Idempotent — safe
+        # alongside the prompt builders' own generation-time guard.
+        sanitized_song = sanitize_reference_song(ref_song)
 
         # 2. Lyrics generation
         await update_status(
@@ -57,7 +62,7 @@ async def job_worker(job_id: str) -> None:
             mood=params.mood,
             story=params.story,
             idea=getattr(params, "idea", None),
-            reference_song=ref_desc or ref_song,
+            reference_song=ref_desc or sanitized_song,
             reference_description=ref_desc,
         )
 
@@ -75,7 +80,7 @@ async def job_worker(job_id: str) -> None:
             genre=params.genre,
             mood=params.mood,
             reference_description=ref_desc,
-            reference_song=ref_song,
+            reference_song=sanitized_song,
         )
 
         generated_path = await music_generate(

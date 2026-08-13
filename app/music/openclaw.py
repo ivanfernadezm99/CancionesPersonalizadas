@@ -33,7 +33,12 @@ class OpenClawClient:
             "Content-Type": "application/json",
         }
 
-    async def invoke(self, lyrics: str, prompt: str, model: str = "google/lyria-3-clip-preview") -> str:
+    async def invoke(
+        self,
+        lyrics: str,
+        prompt: str,
+        model: str = "google/lyria-3-clip-preview",
+    ) -> str:
         """Invoke music generation via OpenClaw.
 
         Posts to /tools/invoke with retry (2 attempts, 10s backoff).

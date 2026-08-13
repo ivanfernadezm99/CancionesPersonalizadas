@@ -8,15 +8,34 @@ text-to-music and Cover modes.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
+import re
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
 
 import httpx
 
+from app.tag_sanitizer import ARTIST_REJECTION_MESSAGE
+
 logger = logging.getLogger(__name__)
+
+
+def _translate_suno_error(msg: str) -> str:
+    """Translate Suno's opaque artist-rejection message to friendly Spanish.
+
+    Matches ``artist name`` or ``tags contain artist`` (IGNORECASE) — the
+    patterns Suno returns when the prompt/tags embed an artist name. Any
+    other message is preserved unchanged (RQ-SUNO-01). Applied at both
+    ``_invoke`` raise sites (HTTP != 200 and business-code rejection).
+    """
+    if re.search(r"artist\s+name", msg, re.IGNORECASE) or re.search(
+        r"tags?.*contain.*artist", msg, re.IGNORECASE
+    ):
+        return ARTIST_REJECTION_MESSAGE
+    return msg
 
 
 # ── Custom Exceptions ────────────────────────────────────────────────────────
@@ -98,7 +117,7 @@ class OpenClawProvider(BaseMusicProvider):
         voice_prompt: str,
         *,
         model: str | None = None,
-        reference_audio: str | None = None,
+        reference_audio: str | None = None,  # noqa: ARG002
         job_id: str | None = None,
     ) -> Path:
         """Generate music via OpenClaw.
@@ -150,7 +169,7 @@ class SunoProvider(BaseMusicProvider):
         lyrics: str,
         voice_prompt: str,
         *,
-        model: str | None = None,
+        model: str | None = None,  # noqa: ARG002
         reference_audio: str | None = None,
         job_id: str | None = None,
     ) -> Path:
@@ -240,14 +259,21 @@ class SunoProvider(BaseMusicProvider):
             )
             if response.status_code != 200:
                 raise SunoError(
-                    f"Suno invoke failed: HTTP {response.status_code} — {response.text[:200]}",
+                    _translate_suno_error(
+                        f"Suno invoke failed: HTTP {response.status_code} — "
+                        f"{response.text[:200]}",
+                    ),
                 )
             data = response.json()
             # Check business code (some Suno APIs return 200 with code=400)
             biz_code = data.get("code", 200)
             if biz_code != 200:
                 msg = data.get("msg", data.get("message", "Unknown error"))
-                raise SunoError(f"Suno invoke rejected (code={biz_code}): {msg}")
+                raise SunoError(
+                    _translate_suno_error(
+                        f"Suno invoke rejected (code={biz_code}): {msg}",
+                    ),
+                )
             # Cover mode wraps response in { code, msg, data: { taskId, ... } }
             if reference_audio:
                 response_data = data.get("data")
@@ -260,7 +286,11 @@ class SunoProvider(BaseMusicProvider):
                     task_id = response_data.get("taskId", "") if response_data else ""
             if not task_id:
                 raise SunoError("Suno invoke returned no task ID")
-            logger.info("Suno invoke successful: taskId=%s (cover=%s)", task_id, bool(reference_audio))
+            logger.info(
+                "Suno invoke successful: taskId=%s (cover=%s)",
+                task_id,
+                bool(reference_audio),
+            )
             return task_id
 
     async def _poll(self, task_id: str, timeout: int = 300) -> str:
@@ -300,10 +330,8 @@ class SunoProvider(BaseMusicProvider):
                     if isinstance(resp_raw, dict):
                         resp_data = resp_raw
                     elif isinstance(resp_raw, str) and resp_raw.strip():
-                        try:
+                        with contextlib.suppress(json.decoder.JSONDecodeError, TypeError):
                             resp_data = json.loads(resp_raw)
-                        except (json.decoder.JSONDecodeError, TypeError):
-                            pass
                     if resp_data:
                         suno_items = resp_data.get("sunoData", [])
                         if suno_items and isinstance(suno_items, list):

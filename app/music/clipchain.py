@@ -12,7 +12,7 @@ import logging
 import re
 import uuid
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from app.config import settings
 from app.music.openclaw import OpenClawClient
@@ -54,11 +54,11 @@ class ClipChainError(Exception):
     """Base error for clip chaining failures."""
 
 
-class AllProvidersUnavailable(ClipChainError):
+class AllProvidersUnavailableError(ClipChainError):
     """Raised when every clip generation attempt fails."""
 
 
-class PydubUnavailable(ClipChainError):
+class PydubUnavailableError(ClipChainError):
     """Raised when pydub is not installed for stitching."""
 
 
@@ -75,7 +75,7 @@ def _get_energy_descriptor(section_name: str) -> str:
     return ENERGY_MAP.get(key, "neutro")
 
 
-def _get_audio_segment():
+def _get_audio_segment() -> Any:
     """Lazy import for pydub to allow graceful fallback."""
     try:
         from pydub import AudioSegment  # noqa: F811
@@ -303,31 +303,31 @@ def stitch_clips(
         Path to the final stitched MP3.
 
     Raises:
-        AllProvidersUnavailable: If no clips succeeded or none loaded.
-        PydubUnavailable: If pydub is not available.
+        AllProvidersUnavailableError: If no clips succeeded or none loaded.
+        PydubUnavailableError: If pydub is not available.
     """
     if crossfade_ms is None:
         crossfade_ms = settings.CLIP_CROSSFADE_MS
 
-    AudioSegment = _get_audio_segment()
-    if AudioSegment is None:
-        raise PydubUnavailable("pydub is required for clip stitching")
+    audio_segment = _get_audio_segment()
+    if audio_segment is None:
+        raise PydubUnavailableError("pydub is required for clip stitching")
 
     valid_clips = [p for p in clip_paths if p is not None]
     if not valid_clips:
-        raise AllProvidersUnavailable("All clip generation attempts failed")
+        raise AllProvidersUnavailableError("All clip generation attempts failed")
 
     # Load all successful clips
-    segments: list = []
+    segments: list[Any] = []
     for path in valid_clips:
         try:
-            seg = AudioSegment.from_mp3(str(path))
+            seg = audio_segment.from_mp3(str(path))
             segments.append(seg)
         except Exception as exc:
             logger.warning("Failed to load clip %s: %s", path, exc)
 
     if not segments:
-        raise AllProvidersUnavailable("No clips could be loaded for stitching")
+        raise AllProvidersUnavailableError("No clips could be loaded for stitching")
 
     # Stitch with crossfade
     result = segments[0]
@@ -407,7 +407,7 @@ async def generate_stitched(
         Path to the final stitched MP3 file.
 
     Raises:
-        AllProvidersUnavailable: If every clip generation fails.
+        AllProvidersUnavailableError: If every clip generation fails.
     """
     if job_id is None:
         job_id = str(uuid.uuid4())
