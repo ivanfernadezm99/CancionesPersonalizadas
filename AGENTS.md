@@ -44,7 +44,9 @@ Backend FastAPI para el generador de canciones personalizadas (API-only, sin UI 
 
 ## Deployment
 
-### Variables de entorno en Railway (cross-repo sync)
+> ⚠️ **Estado actual (IMPORTANTE)**: este backend corre **localmente en Docker** (`docker compose up -d --build`, puerto `8001`), **NO en Railway**. Para desarrollo/testing, las variables viven en `.env` (local, gitignored) y `.env.docker`, y el override (`docker-compose.override.yml`) inyecta los secretos desde `.env` al contenedor. Solo **POSBackend** está deployado en Railway (staging: `https://posbackend-staging.up.railway.app`). La sección de Railway (abajo) aplica **únicamente cuando este backend se deploye a producción**; no setear variables en Railway para este backend por ahora.
+
+### Variables de entorno en Railway (cross-repo sync) — SOLO para deploy futuro
 
 Este backend valida JWT HS256 firmado por POSBackend. **El secreto debe sincronizarse manualmente entre los dos proyectos de Railway:**
 
