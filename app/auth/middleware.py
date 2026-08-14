@@ -130,19 +130,21 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Extract claims from ASP.NET URIs
+        # NOTE: POSBackend emits the role DESCRIPTION (e.g. "Administrador") in the
+        # `role` claim, not a numeric ID — so we keep it as a string.
         request.state.user_id = str(claims.get(NAMEID_URI, ""))  # type: ignore[union-attr]
-        request.state.role_id = int(claims.get(ROLE_URI, 0))  # type: ignore[union-attr]
+        request.state.role = str(claims.get(ROLE_URI, ""))  # type: ignore[union-attr]
         request.state.business_id = str(claims.get(BUSINESS_CLAIM, ""))  # type: ignore[union-attr]
 
         # Role enforcement
         allowed_roles = settings.JWT_ALLOWED_ROLES
-        if allowed_roles and request.state.role_id not in allowed_roles:
+        if allowed_roles and request.state.role not in allowed_roles:
             if settings.JWT_AUTH_ENFORCED:
                 return await _reject(
                     request,
                     status.HTTP_403_FORBIDDEN,
                     "forbidden_role",
                 )
-            logger.warning("Role %s not in allowed roles (permissive mode)", request.state.role_id)
+            logger.warning("Role %s not in allowed roles (permissive mode)", request.state.role)
 
         return await call_next(request)

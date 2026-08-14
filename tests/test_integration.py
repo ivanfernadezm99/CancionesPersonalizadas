@@ -848,6 +848,7 @@ class TestStartupValidation:
         """
         from app.config import settings
 
+        monkeypatch.setattr(settings, "ZEN_API_KEY", "")
         monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
         monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
         monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
@@ -895,6 +896,7 @@ class TestStartupValidation:
         """Settings.has_any_llm_key() should return False when all keys are empty."""
         from app.config import settings
 
+        monkeypatch.setattr(settings, "ZEN_API_KEY", "")
         monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
         monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
         monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")

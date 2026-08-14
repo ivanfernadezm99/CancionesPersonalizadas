@@ -56,7 +56,11 @@ async def guard_client(
     monkeypatch.setattr(settings, "JWT_AUDIENCE", TEST_AUDIENCE)
     monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
     monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", True)
-    monkeypatch.setattr(settings, "JWT_ALLOWED_ROLES", [1, 2, 3, 4, 5])
+    monkeypatch.setattr(
+        settings,
+        "JWT_ALLOWED_ROLES",
+        {"Administrador", "Cajero", "Supervisor", "Vendedor", "Almacén"},
+    )
     monkeypatch.setattr("app.main._active_requests", 0)
 
     from app.main import app
@@ -70,7 +74,7 @@ def _default_claims() -> dict[str, Any]:
     """Standard POSBackend-style claims using ASP.NET URIs."""
     return {
         NAMEID_URI: "user-abc-123",
-        ROLE_URI: 1,
+        ROLE_URI: "Administrador",
         BUSINESS_CLAIM: "biz-001",
     }
 
@@ -86,7 +90,7 @@ async def test_valid_hs256_token_allows_request(
     @app.get("/api/_guard_state")
     async def _guard_state(request: Request) -> dict[str, Any]:
         captured["user_id"] = request.state.user_id
-        captured["role_id"] = request.state.role_id
+        captured["role"] = request.state.role
         captured["business_id"] = request.state.business_id
         return {"ok": True}
 
@@ -100,7 +104,7 @@ async def test_valid_hs256_token_allows_request(
         assert response.status_code == 200, response.text
 
     assert captured["user_id"] == "user-abc-123"
-    assert captured["role_id"] == 1
+    assert captured["role"] == "Administrador"
     assert captured["business_id"] == "biz-001"
 
 
@@ -150,7 +154,7 @@ async def test_role_enforcement(
 ) -> None:
     """A token whose role is not allowed returns 403 forbidden_role."""
     claims = _default_claims()
-    claims[ROLE_URI] = 99
+    claims[ROLE_URI] = "RolNoExistente"
     token = make_hs256_token(claims)
     response = await guard_client.get(
         "/api/status/nonexistent",

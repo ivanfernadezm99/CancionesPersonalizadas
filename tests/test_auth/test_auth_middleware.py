@@ -35,7 +35,7 @@ TEST_SECRET = "test-shared-secret-0123456789abcdef"
 def _create_token(
     *,
     user_id: str = "user-abc-123",
-    role: int = 1,
+    role: str = "Administrador",
     business_id: str = "biz-001",
     issuer: str = "http://localhost",
     audience: str = "http://localhost",
@@ -77,7 +77,11 @@ def _configure(
     monkeypatch.setattr(settings, "JWT_AUDIENCE", "http://localhost")
     monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
     monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", enforced)
-    monkeypatch.setattr(settings, "JWT_ALLOWED_ROLES", [1, 2, 3])
+    monkeypatch.setattr(
+        settings,
+        "JWT_ALLOWED_ROLES",
+        {"Administrador", "Cajero", "Supervisor"},
+    )
     monkeypatch.setattr("app.main._active_requests", 0)
 
 
@@ -166,7 +170,7 @@ class TestValidToken:
     async def test_valid_token_injects_state(
         self, auth_test_app: AsyncClient,  # noqa: ARG002
     ) -> None:
-        """Valid token should inject user_id, role_id, business_id into request.state."""
+        """Valid token should inject user_id, role, business_id into request.state."""
         from app.main import app
 
         captured: dict[str, Any] = {}
@@ -174,11 +178,11 @@ class TestValidToken:
         @app.get("/api/_test_state")
         async def _test_state(request: Request) -> dict[str, Any]:
             captured["user_id"] = request.state.user_id
-            captured["role_id"] = request.state.role_id
+            captured["role"] = request.state.role
             captured["business_id"] = request.state.business_id
             return {"ok": True}
 
-        token = _create_token(user_id="test-user", role=2, business_id="biz-xyz")
+        token = _create_token(user_id="test-user", role="Cajero", business_id="biz-xyz")
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get(
@@ -187,7 +191,7 @@ class TestValidToken:
             )
             assert response.status_code == 200, response.text
         assert captured["user_id"] == "test-user"
-        assert captured["role_id"] == 2
+        assert captured["role"] == "Cajero"
         assert captured["business_id"] == "biz-xyz"
 
 
@@ -243,7 +247,7 @@ class TestMalformedToken:
         now = datetime.now(timezone.utc)
         claims: dict[str, Any] = {
             NAMEID_URI: "user-1",
-            ROLE_URI: 1,
+            ROLE_URI: "Administrador",
             "iss": "http://localhost",
             "aud": "http://localhost",
             "iat": int(now.timestamp()),
@@ -288,7 +292,7 @@ class TestRoleForbidden:
         self, auth_test_app: AsyncClient,
     ) -> None:
         """Token with a role not in ALLOWED_ROLES should return 403 in enforced mode."""
-        token = _create_token(role=99)
+        token = _create_token(role="RolNoExistente")
         response = await auth_test_app.get(
             "/api/status/nonexistent",
             headers={"Authorization": f"Bearer {token}"},
@@ -300,7 +304,7 @@ class TestRoleForbidden:
         self, auth_test_app: AsyncClient,
     ) -> None:
         """Token with an allowed role should pass through middleware."""
-        token = _create_token(role=2)
+        token = _create_token(role="Cajero")
         response = await auth_test_app.get(
             "/api/status/nonexistent",
             headers={"Authorization": f"Bearer {token}"},
@@ -347,7 +351,7 @@ class TestPermissiveMode:
         self, permissive_auth_test_app: AsyncClient,
     ) -> None:
         """In permissive mode, forbidden roles should still pass."""
-        token = _create_token(role=99)
+        token = _create_token(role="RolNoExistente")
         response = await permissive_auth_test_app.get(
             "/api/status/nonexistent",
             headers={"Authorization": f"Bearer {token}"},

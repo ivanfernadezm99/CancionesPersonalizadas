@@ -30,7 +30,7 @@ def _make_hs256_token() -> str:
     now = datetime.now(timezone.utc)
     claims: dict[str, Any] = {
         NAMEID_URI: "user-abc-123",
-        ROLE_URI: 1,
+        ROLE_URI: "Administrador",
         BUSINESS_CLAIM: "biz-001",
         "iss": "http://localhost",
         "aud": "http://localhost",
@@ -80,7 +80,11 @@ async def test_get_voices_jwt_enforced_contract(
     monkeypatch.setattr(settings, "JWT_ISSUER", "http://localhost")
     monkeypatch.setattr(settings, "JWT_AUDIENCE", "http://localhost")
     monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
-    monkeypatch.setattr(settings, "JWT_ALLOWED_ROLES", [1, 2, 3])
+    monkeypatch.setattr(
+        settings,
+        "JWT_ALLOWED_ROLES",
+        {"Administrador", "Cajero", "Supervisor"},
+    )
     monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", True)
 
     async with _client() as client:

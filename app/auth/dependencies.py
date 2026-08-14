@@ -12,18 +12,21 @@ from fastapi import HTTPException, Request, status
 logger = logging.getLogger(__name__)
 
 
-def requires_role(*allowed_roles: int) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def requires_role(*allowed_roles: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator that restricts endpoint access to specific roles.
 
     Usage::
 
         @router.get("/api/admin")
-        @requires_role(1, 2)
+        @requires_role("Administrador", "Cajero")
         async def admin_endpoint(request: Request):
             ...
 
-    The decorator checks ``request.state.role_id`` (set by the JWT middleware)
+    The decorator checks ``request.state.role`` (set by the JWT middleware)
     and raises 403 if the role is not in ``allowed_roles``.
+
+    Roles are DESCRIPTION strings as emitted by POSBackend (e.g. "Administrador"),
+    NOT numeric IDs.
 
     This is a SECONDARY check on top of the base middleware role filtering.
     """
@@ -52,11 +55,11 @@ def requires_role(*allowed_roles: int) -> Callable[[Callable[..., Any]], Callabl
                     detail="internal_error",
                 )
 
-            role_id = getattr(request.state, "role_id", 0)
-            if role_id not in allowed_roles:
+            role = getattr(request.state, "role", "")
+            if allowed_roles and role not in allowed_roles:
                 logger.warning(
                     "Role %s not in allowed roles %s for %s",
-                    role_id,
+                    role,
                     allowed_roles,
                     request.url.path,
                 )

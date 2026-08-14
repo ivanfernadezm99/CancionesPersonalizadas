@@ -72,7 +72,10 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_SHARED_SECRET: str = ""
     JWT_AUTH_ENFORCED: bool = True
-    JWT_ALLOWED_ROLES: frozenset[int] = frozenset({1, 2, 3, 4, 5})
+    # Roles permitidos por DESCRIPCIÓN (POSBackend emite el nombre del rol en el
+    # claim `role`, no el ID numérico). Vacío = permitir todo usuario autenticado.
+    # Roles base de POSBackend: Administrador, Cajero, Supervisor, Vendedor, Almacén.
+    JWT_ALLOWED_ROLES: frozenset[str] = frozenset()
 
     # Payment settings
     SONG_PRICE: float = 5.00
