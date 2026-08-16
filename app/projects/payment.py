@@ -64,6 +64,12 @@ async def create_checkout(project_id: str) -> CheckoutResponse:
             )
             response.raise_for_status()
             data = response.json()
+            # POSBackend wraps the payload under "data" — the real response is
+            # {isSuccess, data: {preference_id, init_point}, ...}. Tolerate the
+            # flat shape too for backward compatibility.
+            inner = data.get("data") if isinstance(data, dict) else None
+            if isinstance(inner, dict):
+                data = inner
         except httpx.HTTPError:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

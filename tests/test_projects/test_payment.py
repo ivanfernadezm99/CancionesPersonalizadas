@@ -90,8 +90,14 @@ class TestCheckout:
             mock.post("/api/checkout").respond(
                 200,
                 json={
-                    "preference_id": "mp-test-123",
-                    "init_point": "https://mercadopago.com/checkout/test",
+                    "isSuccess": True,
+                    "data": {
+                        "preference_id": "mp-test-123",
+                        "init_point": "https://mercadopago.com/checkout/test",
+                    },
+                    "totalRecords": None,
+                    "message": "Consulta exitosa.",
+                    "errors": None,
                 },
             )
 
@@ -102,6 +108,28 @@ class TestCheckout:
             assert data["init_point"] == "https://mercadopago.com/checkout/test"
             assert data["project_id"] == project_id
             assert data["amount"] == 5.00
+
+    @pytest.mark.asyncio
+    async def test_checkout_success_flat_shape_backward_compat(
+        self, payment_client: AsyncClient,
+    ) -> None:
+        """Checkout should tolerate the flat POSBackend shape for backward compat."""
+        project_id = await _create_project(payment_client)
+
+        with respx.mock(base_url="http://test-gateway") as mock:
+            mock.post("/api/checkout").respond(
+                200,
+                json={
+                    "preference_id": "mp-flat-456",
+                    "init_point": "https://mercadopago.com/checkout/flat",
+                },
+            )
+
+            resp = await payment_client.post(f"/api/projects/{project_id}/checkout")
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            assert data["preference_id"] == "mp-flat-456"
+            assert data["init_point"] == "https://mercadopago.com/checkout/flat"
 
     @pytest.mark.asyncio
     async def test_checkout_gateway_down(self, payment_client: AsyncClient) -> None:
