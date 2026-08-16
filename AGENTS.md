@@ -64,4 +64,27 @@ Este backend valida JWT HS256 firmado por POSBackend. **El secreto debe sincroni
 
 ### Webhook de pago (Mercado Pago)
 
-El endpoint `/api/webhooks/payment-confirmed` está **exento de JWT** (usa `X-Webhook-Secret` en su lugar). El webhook NO funciona hasta que POSBackend implemente el dispatch `payment-confirmed` hacia este backend (ver AGENTS.md de POSBackend o crear change `add-mp-webhook-dispatch`).
+El endpoint `/api/webhooks/payment-confirmed` está **exento de JWT** (usa `X-Webhook-Secret`). Flujo completo:
+
+```
+CP ──POST /api/checkout──▶ POSBackend (crea preference MP) ──▶ payer paga
+   ──▶ MP notifica POSBackend (/api/integrations/mercadopago/notify)
+   ──▶ POSBackend despacha POST {Checkout:WebhookUrl} con X-Webhook-Secret
+   ──▶ CP marca el proyecto "paid" (idempotente)
+```
+
+- El dispatch POSBackend → CP **ya está implementado y deployado** (commit `d21f13ad` de PosBackend, rama `staging`). No hay que escribir código nuevo.
+- **Secret compartido**: `PAYMENT_WEBHOOK_SECRET` (este backend) DEBE ser idéntico a `Checkout__WebhookSecret` de POSBackend (Railway). Si no coinciden → 401 silencioso.
+- **Falta configurar en Railway (POSBackend)**: `Checkout__MercadoPago__AccessToken` (+ `PublicKey`). Sin eso, `/api/checkout` devuelve 503 `checkout_not_configured`. Las credenciales salen del panel de Mercado Pago (ver abajo).
+
+#### Acceso al contenedor local (VPN)
+
+El contenedor (`cancionespersonalizadas-api`, puerto `8001`) se expone por la red **Tailscale** del usuario (máquina `servidor-MS-7693`, IP tailnet `100.69.147.88`). Para que POSBackend (Railway) pueda disparar el webhook, la `Checkout__WebhookUrl` de POSBackend debe apuntar a una URL alcanzable por VPN/túnel, **NO** a `localhost`.
+
+#### Credenciales Mercado Pago (para POSBackend)
+
+Se obtienen en https://www.mercadopago.com.ar/developers/panel → **Tus integraciones** → elegir/crear la aplicación → **Credenciales**:
+- **Credenciales de prueba** (sandbox): `Access Token` (`TEST-...`) + `Public Key` (`TEST-...`).
+- **Credenciales de producción**: `Access Token` (`APP_USR-...`) + `Public Key` (`APP_USR-...`).
+
+Para staging/testing usar las de **prueba** (sandbox, `IsSandbox=true` por default). Se setean en Railway → POSBackend → `Checkout__MercadoPago__AccessToken` / `Checkout__MercadoPago__PublicKey`.
