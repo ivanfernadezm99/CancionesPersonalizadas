@@ -256,7 +256,8 @@ class TestSunoInvoke:
             sent = route.calls[0].request
             import json
             payload = json.loads(sent.content)
-            assert payload["prompt"] == "romántica bachata"
+            assert "prompt" not in payload, "prompt should NOT be sent in text-to-music customMode"
+            assert payload["style"] == "romántica bachata"
             assert payload["lyrics"] == "Test lyrics"
             assert payload["customMode"] is True
             assert payload["model"] == "V4_5"

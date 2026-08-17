@@ -67,8 +67,11 @@ class Settings(BaseSettings):
 
     # JWT Authentication
     JWT_JWKS_URL: str = ""  # deprecated — kept for backward compat, unused with HS256
-    JWT_ISSUER: str = "http://localhost"
-    JWT_AUDIENCE: str = "http://localhost"
+    # issuer/audience validation disabled by default: POSBackend emits different
+    # iss/aud per environment, which caused false 401s. The HS256 shared secret
+    # is the real security boundary. Empty = skip iss/aud checks in the middleware.
+    JWT_ISSUER: str = ""
+    JWT_AUDIENCE: str = ""
     JWT_ALGORITHM: str = "HS256"
     JWT_SHARED_SECRET: str = ""
     JWT_AUTH_ENFORCED: bool = True
@@ -81,6 +84,10 @@ class Settings(BaseSettings):
     SONG_PRICE: float = 5.00
     PAYMENT_GATEWAY_URL: str = ""
     PAYMENT_WEBHOOK_SECRET: str = ""
+
+    # Cloudflare Turnstile (anti-bot)
+    TURNSTILE_SECRET_KEY: str = ""
+    TURNSTILE_SITE_KEY: str = ""
 
     @field_validator("OPENCLAW_BASE_URL")
     @classmethod

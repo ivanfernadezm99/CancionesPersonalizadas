@@ -29,6 +29,7 @@ def _permissive_auth_default(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.config import settings
 
     monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", False)
+    monkeypatch.setattr(settings, "TURNSTILE_SECRET_KEY", "")
 
 # ── DB Fixtures ──────────────────────────────────────────────────────────────────
 

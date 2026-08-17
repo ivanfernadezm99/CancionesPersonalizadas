@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from jose import jwt
 
 
 @pytest.fixture
@@ -284,6 +286,156 @@ class TestCreateProject:
                 json={"recipient": ""},
             )
             assert response.status_code == 422
+
+
+class TestListProjects:
+    """Tests for GET /api/projects — list the authenticated user's projects."""
+
+    ASPNET_NAMEID = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
+    ROLE_URI = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+    SECRET = "test-shared-secret-0123456789abcdef"
+
+    def _token(self, user_id: str) -> str:
+        now = datetime.now(timezone.utc)
+        return jwt.encode(
+            {
+                self.ASPNET_NAMEID: user_id,
+                self.ROLE_URI: "Administrador",
+                "BusinessId": "1",
+                "iss": "http://localhost",
+                "aud": "http://localhost",
+                "exp": int((now + timedelta(hours=1)).timestamp()),
+            },
+            self.SECRET,
+            algorithm="HS256",
+        )
+
+    def _configure(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "test.db"))
+        monkeypatch.setattr(settings, "OUTPUT_DIR", str(tmp_path / "output"))
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
+        monkeypatch.setattr(settings, "OPENCLAW_TOKEN", "test-token")
+        monkeypatch.setattr(settings, "MAX_CONCURRENT_JOBS", 5)
+        monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", True)
+        monkeypatch.setattr(settings, "JWT_SHARED_SECRET", self.SECRET)
+        monkeypatch.setattr(settings, "JWT_ISSUER", "")
+        monkeypatch.setattr(settings, "JWT_AUDIENCE", "")
+        monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
+        monkeypatch.setattr("app.main._active_requests", 0)
+
+    @pytest.mark.asyncio
+    async def test_list_projects_scoped_to_user(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """GET /api/projects returns only the authenticated user's projects."""
+        self._configure(tmp_path, monkeypatch)
+
+        from app.main import app
+
+        transport = ASGITransport(app=app)
+        hdr_a = {"Authorization": f"Bearer {self._token('user-a')}"}
+        hdr_b = {"Authorization": f"Bearer {self._token('user-b')}"}
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # User A creates two projects, user B creates one.
+            for _ in range(2):
+                r = await client.post(
+                    "/api/projects",
+                    json={"recipient": "María", "relationship": "pareja"},
+                    headers=hdr_a,
+                )
+                assert r.status_code == 201
+            r = await client.post(
+                "/api/projects",
+                json={"recipient": "Juan", "relationship": "amigo"},
+                headers=hdr_b,
+            )
+            assert r.status_code == 201
+
+            # User A lists → sees only their 2 projects.
+            r = await client.get("/api/projects", headers=hdr_a)
+            assert r.status_code == 200
+            projects = r.json()
+            assert len(projects) == 2
+            assert all(p["recipient"] == "María" for p in projects)
+
+            # User B lists → sees only their 1 project.
+            r = await client.get("/api/projects", headers=hdr_b)
+            assert r.status_code == 200
+            projects = r.json()
+            assert len(projects) == 1
+            assert projects[0]["recipient"] == "Juan"
+
+    @pytest.mark.asyncio
+    async def test_list_projects_returns_empty_for_new_user(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """GET /api/projects returns [] for a user with no projects."""
+        self._configure(tmp_path, monkeypatch)
+
+        from app.main import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.get(
+                "/api/projects",
+                headers={"Authorization": f"Bearer {self._token('user-nobody')}"},
+            )
+            assert r.status_code == 200
+            assert r.json() == []
+
+
+class TestMigration:
+    """Existing databases must be migrated to add the user_id column."""
+
+    @pytest.mark.asyncio
+    async def test_init_schema_adds_user_id_to_existing_db(
+        self, tmp_path: Path,
+    ) -> None:
+        """init_schema must add user_id to a db that already has idea (but not user_id).
+
+        Regression: the user_id ALTER was nested inside the `idea` suppress block,
+        so it was skipped whenever the `idea` column already existed.
+        """
+        import aiosqlite
+
+        from app.projects import store
+
+        db_path = str(tmp_path / "old.db")
+        conn = await aiosqlite.connect(db_path)
+        await conn.executescript(
+            """
+            CREATE TABLE projects (
+                id              TEXT PRIMARY KEY,
+                recipient       TEXT NOT NULL,
+                relationship    TEXT NOT NULL,
+                genre           TEXT NOT NULL DEFAULT 'balada romántica',
+                mood            TEXT NOT NULL DEFAULT 'romántico',
+                voice           TEXT NOT NULL DEFAULT 'male',
+                reference_song  TEXT,
+                reference_description TEXT,
+                chaining_enabled INTEGER NOT NULL DEFAULT 0,
+                status          TEXT NOT NULL DEFAULT 'draft'
+                                CHECK(status IN ('draft','preview_ready',
+                                                 'payment_pending','paid','completed')),
+                paid_at         TEXT,
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL,
+                idea            TEXT
+            );
+            """
+        )
+        await conn.commit()
+        await conn.close()
+
+        await store.init_schema(db_path)
+
+        conn2 = await aiosqlite.connect(db_path)
+        cols = [r[1] for r in await (await conn2.execute("PRAGMA table_info(projects)")).fetchall()]
+        await conn2.close()
+        assert "user_id" in cols
 
 
 class TestGetProject:

@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE TABLE IF NOT EXISTS projects (
     id              TEXT PRIMARY KEY,
+    user_id         TEXT,
     recipient       TEXT NOT NULL,
     relationship    TEXT NOT NULL,
     genre           TEXT NOT NULL DEFAULT 'balada romántica',
@@ -139,6 +140,8 @@ async def init_schema(db_path: str, conn: aiosqlite.Connection | None = None) ->
             )
         with contextlib.suppress(aiosqlite.OperationalError):
             await conn.execute("ALTER TABLE projects ADD COLUMN idea TEXT")
+        with contextlib.suppress(aiosqlite.OperationalError):
+            await conn.execute("ALTER TABLE projects ADD COLUMN user_id TEXT")
         await _migrate_project_status(conn)
         await conn.commit()
         return
@@ -155,24 +158,28 @@ async def init_schema(db_path: str, conn: aiosqlite.Connection | None = None) ->
             )
         with contextlib.suppress(aiosqlite.OperationalError):
             await conn.execute("ALTER TABLE projects ADD COLUMN idea TEXT")
+        with contextlib.suppress(aiosqlite.OperationalError):
+            await conn.execute("ALTER TABLE projects ADD COLUMN user_id TEXT")
         await _migrate_project_status(conn)
         await conn.commit()
     finally:
         await conn.close()
 
 
-async def create_project(data: SongProjectCreate, *, db_path: str) -> str:
+async def create_project(
+    data: SongProjectCreate, *, user_id: str = "", db_path: str,
+) -> str:
     project_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     conn = await _get_conn(db_path)
     try:
         await init_schema(db_path, conn=conn)
         await conn.execute(
-            """INSERT INTO projects (id, recipient, relationship, genre, mood, voice,
-                                       reference_song, reference_description, idea,
+            """INSERT INTO projects (id, user_id, recipient, relationship, genre, mood,
+                                       voice, reference_song, reference_description, idea,
                                        chaining_enabled, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (project_id, data.recipient, data.relationship, data.genre,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (project_id, user_id or None, data.recipient, data.relationship, data.genre,
              data.mood, data.voice, data.reference_song, data.reference_description,
              data.idea, int(data.chaining_enabled), now, now),
         )
@@ -180,6 +187,31 @@ async def create_project(data: SongProjectCreate, *, db_path: str) -> str:
     finally:
         await conn.close()
     return project_id
+
+
+async def _load_project_children(
+    conn: aiosqlite.Connection, project: dict[str, Any],
+) -> dict[str, Any]:
+    """Load story fragments and previews into a project dict (mutates + returns it)."""
+    project_id = project["id"]
+
+    frag_cursor = await conn.execute(
+        "SELECT * FROM story_fragments WHERE project_id = ? ORDER BY sort_order",
+        (project_id,),
+    )
+    project["fragments"] = [dict(r) async for r in frag_cursor]
+
+    pj_cursor = await conn.execute(
+        """SELECT pj.job_id, pj.job_type, pj.created_at, j.status
+           FROM project_jobs pj
+           LEFT JOIN jobs j ON j.job_id = pj.job_id
+           WHERE pj.project_id = ?
+           ORDER BY pj.created_at DESC""",
+        (project_id,),
+    )
+    project["previews"] = [dict(r) async for r in pj_cursor]
+
+    return project
 
 
 async def get_project(project_id: str, *, db_path: str) -> dict[str, Any] | None:
@@ -192,27 +224,26 @@ async def get_project(project_id: str, *, db_path: str) -> dict[str, Any] | None
         row = await cursor.fetchone()
         if row is None:
             return None
-        project = dict(row)
+        return await _load_project_children(conn, dict(row))
+    finally:
+        await conn.close()
 
-        # Load fragments
-        frag_cursor = await conn.execute(
-            "SELECT * FROM story_fragments WHERE project_id = ? ORDER BY sort_order",
-            (project_id,),
+
+async def list_projects(user_id: str, *, db_path: str) -> list[dict[str, Any]]:
+    """List projects owned by a user, newest first, with fragments and previews."""
+    if not user_id:
+        return []
+    conn = await _get_conn(db_path)
+    try:
+        await init_schema(db_path, conn=conn)
+        cursor = await conn.execute(
+            "SELECT * FROM projects WHERE user_id = ? ORDER BY created_at DESC",
+            (user_id,),
         )
-        project["fragments"] = [dict(r) async for r in frag_cursor]
-
-        # Load previews
-        pj_cursor = await conn.execute(
-            """SELECT pj.job_id, pj.job_type, pj.created_at, j.status
-               FROM project_jobs pj
-               LEFT JOIN jobs j ON j.job_id = pj.job_id
-               WHERE pj.project_id = ?
-               ORDER BY pj.created_at DESC""",
-            (project_id,),
-        )
-        project["previews"] = [dict(r) async for r in pj_cursor]
-
-        return project
+        projects: list[dict[str, Any]] = []
+        async for row in cursor:
+            projects.append(await _load_project_children(conn, dict(row)))
+        return projects
     finally:
         await conn.close()
 

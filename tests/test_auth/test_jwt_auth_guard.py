@@ -112,7 +112,7 @@ async def test_missing_token_blocked_when_enforced(
     guard_client: AsyncClient,
 ) -> None:
     """A protected request without a Bearer token returns 401 when enforced."""
-    response = await guard_client.get("/api/status/nonexistent")
+    response = await guard_client.get("/api/admin/test")
     assert response.status_code == 401, response.text
     assert response.json()["error"] == "unauthorized"
 
@@ -157,7 +157,7 @@ async def test_role_enforcement(
     claims[ROLE_URI] = "RolNoExistente"
     token = make_hs256_token(claims)
     response = await guard_client.get(
-        "/api/status/nonexistent",
+        "/api/admin/test",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 403, response.text

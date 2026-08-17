@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, UploadFile, status
+from fastapi import APIRouter, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.audio_analysis import AudioAnalysisError, analyze_audio
@@ -81,17 +81,28 @@ def _project_to_response(project: dict[str, Any]) -> SongProjectResponse:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_project(data: SongProjectCreate) -> dict[str, Any]:
+async def create_project(data: SongProjectCreate, request: Request) -> dict[str, Any]:
     """Create a new song project.
 
     Returns the project ID and status.
     """
-    project_id = await orch_create_project(data)
+    user_id = str(getattr(request.state, "user_id", "") or "")
+    project_id = await orch_create_project(data, user_id=user_id)
     return {
         "id": project_id,
         "status": "draft",
         "endpoints": {"project": f"/api/projects/{project_id}"},
     }
+
+
+@router.get("")
+async def list_projects(request: Request) -> list[SongProjectResponse]:
+    """List the authenticated user's projects (newest first)."""
+    from app.config import settings
+
+    user_id = str(getattr(request.state, "user_id", "") or "")
+    projects = await store.list_projects(user_id, db_path=settings.DB_PATH)
+    return [_project_to_response(p) for p in projects]
 
 
 @router.get("/{project_id}")
@@ -181,12 +192,17 @@ async def replace_fragments(
 
 
 @router.post("/{project_id}/preview", status_code=status.HTTP_202_ACCEPTED)
-async def create_preview(project_id: str) -> JobCreateResponse:
+async def create_preview(project_id: str, request: Request) -> JobCreateResponse:
     """Generate a preview song from accumulated story fragments.
 
     Uses lyria-3-clip-preview model with 30s target duration.
     Requires at least one story fragment.
+    Requires a valid Cloudflare Turnstile token when TURNSTILE_SECRET_KEY is set.
     """
+    from app.auth.turnstile import verify_turnstile
+
+    await verify_turnstile(request)
+
     try:
         return await create_preview_job(project_id)
     except ValueError as exc:

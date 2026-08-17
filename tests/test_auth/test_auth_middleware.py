@@ -8,6 +8,7 @@ Tests are organized by scenario:
 - Role forbidden → 403
 - Permissive mode → passthrough
 - Public endpoints + webhook → 200 without token
+- Public prefixes (customer-facing) → bypass auth
 - HS256KeyProvider unit tests
 """
 
@@ -158,10 +159,10 @@ class TestValidToken:
         """Protected endpoint with valid token should pass auth (returns 404, not 401)."""
         token = _create_token()
         response = await auth_test_app.get(
-            "/api/status/nonexistent",
+            "/api/admin/test",
             headers={"Authorization": f"Bearer {token}"},
         )
-        # 404 = auth passed (job not found)
+        # 404 = auth passed (no such route)
         assert response.status_code == 404, (
             f"Expected 404 (auth passed), got {response.status_code}: {response.text}"
         )
@@ -194,6 +195,79 @@ class TestValidToken:
         assert captured["role"] == "Cajero"
         assert captured["business_id"] == "biz-xyz"
 
+    @pytest.mark.asyncio
+    async def test_aspnet_nameid_uri_injects_user_id(
+        self, auth_test_app: AsyncClient,  # noqa: ARG002
+    ) -> None:
+        """POSBackend emits NameIdentifier with the xmlsoap.org URI (not WIF)."""
+        from app.main import app
+
+        aspnet_nameid = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
+        captured: dict[str, Any] = {}
+
+        @app.get("/api/_test_state_aspnet")
+        async def _test_state_aspnet(request: Request) -> dict[str, Any]:
+            captured["user_id"] = request.state.user_id
+            return {"ok": True}
+
+        now = datetime.now(timezone.utc)
+        token = jwt.encode(
+            {
+                aspnet_nameid: "user-aspnet-1",
+                ROLE_URI: "Administrador",
+                BUSINESS_CLAIM: "biz-1",
+                "iss": "http://localhost",
+                "aud": "http://localhost",
+                "iat": int(now.timestamp()),
+                "exp": int((now + timedelta(hours=1)).timestamp()),
+            },
+            TEST_SECRET,
+            algorithm="HS256",
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/api/_test_state_aspnet",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert response.status_code == 200, response.text
+        assert captured["user_id"] == "user-aspnet-1"
+
+
+class TestIssuerAudienceDisabled:
+    """Issuer/audience validation must be fully skippable when settings are empty."""
+
+    @pytest.mark.asyncio
+    async def test_bogus_issuer_audience_accepted_when_disabled(
+        self,
+        auth_test_app: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A token with arbitrary iss/aud (valid secret) must pass when empty.
+
+        Regression: python-jose raises "Invalid audience" when the token carries
+        an ``aud`` claim but the expected audience is ``None``. Emptying the
+        settings must disable the check outright, not just pass ``None``.
+        """
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "JWT_ISSUER", "")
+        monkeypatch.setattr(settings, "JWT_AUDIENCE", "")
+
+        token = _create_token(
+            issuer="https://some-other-issuer.example",
+            audience="some-other-audience",
+        )
+        response = await auth_test_app.get(
+            "/api/admin/test",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        # 404 = auth passed (no such route), not 401
+        assert response.status_code == 404, (
+            f"Expected 404 (auth passed with disabled iss/aud), "
+            f"got {response.status_code}: {response.text}"
+        )
+
 
 class TestExpiredToken:
     """Tests with an expired JWT token."""
@@ -205,7 +279,7 @@ class TestExpiredToken:
         """Expired token should return 401 in enforced mode."""
         token = _create_token(expire_offset=-3600)  # Expired 1 hour ago
         response = await auth_test_app.get(
-            "/api/status/nonexistent",
+            "/api/admin/test",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 401, response.text
@@ -220,7 +294,7 @@ class TestMalformedToken:
     ) -> None:
         """Malformed token should return 401."""
         response = await auth_test_app.get(
-            "/api/status/nonexistent",
+            "/api/admin/test",
             headers={"Authorization": "Bearer this.is.not.a.jwt"},
         )
         assert response.status_code == 401, response.text
@@ -234,7 +308,7 @@ class TestMalformedToken:
         parts = token.split(".")
         tampered = parts[0] + "." + parts[1] + ".badsignature"
         response = await auth_test_app.get(
-            "/api/status/nonexistent",
+            "/api/admin/test",
             headers={"Authorization": f"Bearer {tampered}"},
         )
         assert response.status_code == 401, response.text
@@ -255,7 +329,7 @@ class TestMalformedToken:
         }
         bad_token = jwt.encode(claims, "a-different-secret", algorithm="HS256")
         response = await auth_test_app.get(
-            "/api/status/nonexistent",
+            "/api/admin/test",
             headers={"Authorization": f"Bearer {bad_token}"},
         )
         assert response.status_code == 401, response.text
@@ -269,7 +343,7 @@ class TestNoToken:
         self, auth_test_app: AsyncClient,
     ) -> None:
         """Missing Bearer header should return 401 in enforced mode."""
-        response = await auth_test_app.get("/api/status/nonexistent")
+        response = await auth_test_app.get("/api/admin/test")
         assert response.status_code == 401, response.text
 
     @pytest.mark.asyncio
@@ -278,7 +352,7 @@ class TestNoToken:
     ) -> None:
         """Non-Bearer auth scheme should return 401."""
         response = await auth_test_app.get(
-            "/api/status/nonexistent",
+            "/api/admin/test",
             headers={"Authorization": "Basic dGVzdDp0ZXN0"},
         )
         assert response.status_code == 401, response.text
@@ -294,7 +368,7 @@ class TestRoleForbidden:
         """Token with a role not in ALLOWED_ROLES should return 403 in enforced mode."""
         token = _create_token(role="RolNoExistente")
         response = await auth_test_app.get(
-            "/api/status/nonexistent",
+            "/api/admin/test",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 403, response.text
@@ -306,7 +380,7 @@ class TestRoleForbidden:
         """Token with an allowed role should pass through middleware."""
         token = _create_token(role="Cajero")
         response = await auth_test_app.get(
-            "/api/status/nonexistent",
+            "/api/admin/test",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 404, response.text
@@ -322,7 +396,7 @@ class TestPermissiveMode:
         """In permissive mode, expired tokens should still pass through."""
         token = _create_token(expire_offset=-3600)
         response = await permissive_auth_test_app.get(
-            "/api/status/nonexistent",
+            "/api/admin/test",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 404, response.text
@@ -332,7 +406,7 @@ class TestPermissiveMode:
         self, permissive_auth_test_app: AsyncClient,
     ) -> None:
         """In permissive mode, missing Bearer header should still pass."""
-        response = await permissive_auth_test_app.get("/api/status/nonexistent")
+        response = await permissive_auth_test_app.get("/api/admin/test")
         assert response.status_code == 404, response.text
 
     @pytest.mark.asyncio
@@ -341,7 +415,7 @@ class TestPermissiveMode:
     ) -> None:
         """In permissive mode, malformed tokens should still pass."""
         response = await permissive_auth_test_app.get(
-            "/api/status/nonexistent",
+            "/api/admin/test",
             headers={"Authorization": "Bearer not-a-real-token"},
         )
         assert response.status_code == 404, response.text
@@ -353,7 +427,7 @@ class TestPermissiveMode:
         """In permissive mode, forbidden roles should still pass."""
         token = _create_token(role="RolNoExistente")
         response = await permissive_auth_test_app.get(
-            "/api/status/nonexistent",
+            "/api/admin/test",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 404, response.text
@@ -378,6 +452,56 @@ class TestPublicEndpoints:
         """GET / should work without token even in enforced mode."""
         response = await auth_test_app.get("/")
         assert response.status_code == 200
+
+
+class TestPublicPrefixes:
+    """Customer-facing route prefixes bypass JWT auth entirely."""
+
+    @pytest.mark.asyncio
+    async def test_projects_list_public(
+        self, auth_test_app: AsyncClient,
+    ) -> None:
+        """GET /api/projects should return 200 without token (customer flow)."""
+        response = await auth_test_app.get("/api/projects")
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_projects_create_public(
+        self, auth_test_app: AsyncClient,
+    ) -> None:
+        """POST /api/projects should work without token (customer creates project)."""
+        response = await auth_test_app.post(
+            "/api/projects",
+            json={"recipient": "María", "relationship": "esposa", "genre": "pop", "mood": "romántico"},
+        )
+        assert response.status_code == 201
+
+    @pytest.mark.asyncio
+    async def test_projects_get_by_id_public(
+        self, auth_test_app: AsyncClient,
+    ) -> None:
+        """GET /api/projects/{id} should work without token (customer preview)."""
+        # Create a project first
+        create_resp = await auth_test_app.post(
+            "/api/projects",
+            json={"recipient": "Ana", "relationship": "amiga", "genre": "rock", "mood": "alegre"},
+        )
+        project_id = create_resp.json()["id"]
+        response = await auth_test_app.get(f"/api/projects/{project_id}")
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_generate_public(
+        self, auth_test_app: AsyncClient,
+    ) -> None:
+        """POST /api/generate should bypass auth (customer generation flow)."""
+        # This will fail with validation (no music provider), but the point is
+        # it doesn't return 401
+        response = await auth_test_app.post(
+            "/api/generate",
+            json={"recipient": "Test", "relationship": "amigo", "genre": "pop", "mood": "alegre"},
+        )
+        assert response.status_code != 401
 
 
 class TestWebhookExempt:

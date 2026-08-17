@@ -45,16 +45,17 @@ def _normalize_voice(voice: str | None) -> str:
     return _LEGACY_VOICE_MAP.get(voice, voice)
 
 
-async def create_project(data: SongProjectCreate) -> str:
+async def create_project(data: SongProjectCreate, *, user_id: str = "") -> str:
     """Create a new song project and return its ID.
 
     Args:
         data: Project creation parameters.
+        user_id: Owning user ID (from the JWT nameidentifier claim).
 
     Returns:
         The new project's UUID string.
     """
-    return await store.create_project(data, db_path=settings.DB_PATH)
+    return await store.create_project(data, user_id=user_id, db_path=settings.DB_PATH)
 
 
 async def create_preview_job(project_id: str) -> JobCreateResponse:

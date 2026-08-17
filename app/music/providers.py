@@ -234,8 +234,10 @@ class SunoProvider(BaseMusicProvider):
             endpoint = f"{self.base_url}/api/v1/generate/upload-cover"
         else:
             # Text-to-music — standard generation
+            # NOTE: Do NOT set "prompt" here. In customMode Suno uses
+            # "lyrics" + "style"; sending the voice descriptor as "prompt"
+            # causes Suno to sing the descriptor text as lyrics.
             payload = {
-                "prompt": prompt,
                 "customMode": True,
                 "style": prompt,
                 "title": "",
