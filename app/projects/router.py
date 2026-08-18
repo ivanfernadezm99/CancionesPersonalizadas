@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, stat
 from fastapi.responses import FileResponse
 
 from app.audio_analysis import AudioAnalysisError, analyze_audio
+from app.auth.dependencies import get_current_user
 from app.lyrics import generate as lyrics_generate
 from app.lyrics.providers import LyricsGenerationError
 from app.models import (
@@ -33,9 +34,44 @@ from app.projects import create_final_job, create_preview_job, ref_audio, store
 from app.projects import create_project as orch_create_project
 from app.projects.draft import normalize_draft
 from app.projects.payment import create_checkout
-from app.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/api/projects")
+
+
+async def _check_project_ownership(
+    project_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    """Verify the requester owns the project before a mutation.
+
+    Returns the project dict. Raises 404 if not found, 401 if unauthenticated
+    on an owned project, or 403 if the authenticated user doesn't match.
+    """
+    from app.config import settings
+
+    project = await store.get_project(project_id, db_path=settings.DB_PATH)
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "project_not_found",
+                "project_id": project_id,
+            },
+        )
+    owner = project.get("user_id")
+    if owner:
+        user_id = str(getattr(request.state, "user_id", "") or "")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"error": "unauthorized"},
+            )
+        if user_id != owner:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"error": "project_forbidden"},
+            )
+    return project
 
 
 def _project_to_response(project: dict[str, Any]) -> SongProjectResponse:
@@ -108,7 +144,9 @@ async def list_projects(request: Request) -> list[SongProjectResponse]:
 
 
 @router.get("/mine")
-async def my_projects(user: dict[str, str] = Depends(get_current_user)) -> list[SongProjectResponse]:
+async def my_projects(
+    user: dict[str, str] = Depends(get_current_user),  # noqa: B008
+) -> list[SongProjectResponse]:
     """List only projects owned by the authenticated JWT user."""
     from app.config import settings
     projects = await store.list_projects(user["user_id"], db_path=settings.DB_PATH)
@@ -116,8 +154,12 @@ async def my_projects(user: dict[str, str] = Depends(get_current_user)) -> list[
 
 
 @router.get("/lookup")
-async def lookup_by_email(email: str) -> list[SongProjectResponse]:
-    """Look up all paid projects by customer email for song recovery."""
+async def lookup_by_email(email: str) -> list[dict[str, str]]:
+    """Look up minimal project info by customer email for song recovery.
+
+    Returns only id, recipient, status, created_at — never fragments or
+    other internal fields.
+    """
     from app.config import settings
 
     if not email or not email.strip():
@@ -126,23 +168,21 @@ async def lookup_by_email(email: str) -> list[SongProjectResponse]:
             detail={"error": "email_required", "message": "Email parameter is required"},
         )
     projects = await store.lookup_projects_by_email(email, db_path=settings.DB_PATH)
-    return [_project_to_response(p) for p in projects]
+    return [
+        {
+            "id": p["id"],
+            "recipient": p["recipient"],
+            "status": p["status"],
+            "created_at": p["created_at"],
+        }
+        for p in projects
+    ]
 
 
 @router.get("/{project_id}")
 async def get_project(project_id: str, request: Request) -> SongProjectResponse:
     """Get a project by ID with all fragments and previews."""
-    from app.config import settings
-
-    project = await store.get_project(project_id, db_path=settings.DB_PATH)
-    if project is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": "project_not_found", "project_id": project_id},
-        )
-    user_id = str(getattr(request.state, "user_id", "") or "")
-    if user_id and project.get("user_id") and project["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail={"error": "project_forbidden"})
+    project = await _check_project_ownership(project_id, request)
     return _project_to_response(project)
 
 
@@ -150,8 +190,11 @@ async def get_project(project_id: str, request: Request) -> SongProjectResponse:
 async def update_project(
     project_id: str,
     data: SongProjectUpdate,
+    request: Request,
 ) -> SongProjectResponse:
     """Update project fields and/or add a story fragment."""
+    await _check_project_ownership(project_id, request)
+
     from app.config import settings
 
     found = await store.update_project(
@@ -177,19 +220,13 @@ COMPLETED_STATUSES = frozenset({"paid", "completed"})
 async def replace_fragments(
     project_id: str,
     data: ReplaceFragmentsRequest,
+    request: Request,
 ) -> SongProjectResponse:
     """Replace the full story fragment list of a project.
 
     Returns 409 Conflict if the project is already paid or completed.
     """
-    from app.config import settings
-
-    project = await store.get_project(project_id, db_path=settings.DB_PATH)
-    if project is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": "project_not_found", "project_id": project_id},
-        )
+    project = await _check_project_ownership(project_id, request)
 
     if project["status"] in COMPLETED_STATUSES:
         raise HTTPException(
@@ -201,6 +238,8 @@ async def replace_fragments(
                 "current_status": project["status"],
             },
         )
+
+    from app.config import settings
 
     found = await store.replace_fragments(
         project_id,
@@ -251,21 +290,15 @@ async def create_preview(project_id: str, request: Request) -> JobCreateResponse
 
 
 @router.post("/{project_id}/final", status_code=status.HTTP_202_ACCEPTED)
-async def create_final(project_id: str) -> JobCreateResponse:
+async def create_final(project_id: str, request: Request) -> JobCreateResponse:
     """Generate the final song from accumulated story fragments.
 
     Uses lyria-3-pro-preview model with 150s target duration.
     Requires at least one story fragment and a 'paid' project status.
     Returns 402 Payment Required if the project has not been paid.
     """
-    from app.config import settings as app_settings
 
-    project = await store.get_project(project_id, db_path=app_settings.DB_PATH)
-    if project is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": "project_not_found", "project_id": project_id},
-        )
+    project = await _check_project_ownership(project_id, request)
 
     if project["status"] != "paid":
         raise HTTPException(
@@ -299,7 +332,7 @@ async def create_final(project_id: str) -> JobCreateResponse:
 
 
 @router.post("/{project_id}/lyrics-draft", response_model=LyricsResult)
-async def lyrics_draft(project_id: str) -> LyricsResult:
+async def lyrics_draft(project_id: str, request: Request) -> LyricsResult:
     """Generate editable draft lyrics for a project (RQ-DRAFT-01).
 
     Combines the project's recipient, accumulated story fragments, and the
@@ -311,12 +344,7 @@ async def lyrics_draft(project_id: str) -> LyricsResult:
     """
     from app.config import settings
 
-    project = await store.get_project(project_id, db_path=settings.DB_PATH)
-    if project is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": "project_not_found", "project_id": project_id},
-        )
+    project = await _check_project_ownership(project_id, request)
 
     story = await store.get_accumulated_story(project_id, db_path=settings.DB_PATH)
     idea = project.get("idea")
@@ -358,6 +386,7 @@ async def lyrics_draft(project_id: str) -> LyricsResult:
 async def upload_reference_audio(
     project_id: str,
     file: UploadFile,
+    request: Request,
 ) -> AudioReferenceResponse:
     """Upload an audio file as style reference for the project.
 
@@ -377,13 +406,8 @@ async def upload_reference_audio(
             detail={"error": "invalid_format", "message": "Only MP3 files are supported"},
         )
 
-    # Check project exists
-    project = await store.get_project(project_id, db_path=settings.DB_PATH)
-    if project is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": "project_not_found", "project_id": project_id},
-        )
+    # Check project exists + ownership
+    await _check_project_ownership(project_id, request)
 
     # Save uploaded file to temp
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
@@ -442,11 +466,12 @@ router.add_api_route(
 
 
 @router.get("/ref-audio/{project_id}")
-async def serve_reference_audio(project_id: str) -> FileResponse:
+async def serve_reference_audio(project_id: str, request: Request) -> FileResponse:
     """Serve a stored reference audio file for Suno Cover mode.
 
     Returns the MP3 file if it exists, otherwise 404.
     """
+    await _check_project_ownership(project_id, request)
     ref_path = ref_audio.get_reference_audio_path(project_id)
     if ref_path is None:
         raise HTTPException(

@@ -190,7 +190,11 @@ async def stream_audio(
                 content_limit=preview_limit,
             )
 
-        # Full stream: check payment status
+        # Full stream: check payment status.
+        # Paid projects are downloadable by anyone who knows the job_id
+        # (payment is the authorization).  When a JWT IS present we enforce
+        # ownership so a different user's token can't access someone else's
+        # paid content.
         project = await _get_project_by_job(job_id, db_path=settings.DB_PATH)
         user_id = str(getattr(request.state, "user_id", "") or "")
         if user_id and project is not None and project.get("user_id") not in (None, user_id):
