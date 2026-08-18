@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.audio_analysis import AudioAnalysisError, analyze_audio
@@ -33,6 +33,7 @@ from app.projects import create_final_job, create_preview_job, ref_audio, store
 from app.projects import create_project as orch_create_project
 from app.projects.draft import normalize_draft
 from app.projects.payment import create_checkout
+from app.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/api/projects")
 
@@ -106,6 +107,14 @@ async def list_projects(request: Request) -> list[SongProjectResponse]:
     return [_project_to_response(p) for p in projects]
 
 
+@router.get("/mine")
+async def my_projects(user: dict[str, str] = Depends(get_current_user)) -> list[SongProjectResponse]:
+    """List only projects owned by the authenticated JWT user."""
+    from app.config import settings
+    projects = await store.list_projects(user["user_id"], db_path=settings.DB_PATH)
+    return [_project_to_response(p) for p in projects]
+
+
 @router.get("/lookup")
 async def lookup_by_email(email: str) -> list[SongProjectResponse]:
     """Look up all paid projects by customer email for song recovery."""
@@ -121,7 +130,7 @@ async def lookup_by_email(email: str) -> list[SongProjectResponse]:
 
 
 @router.get("/{project_id}")
-async def get_project(project_id: str) -> SongProjectResponse:
+async def get_project(project_id: str, request: Request) -> SongProjectResponse:
     """Get a project by ID with all fragments and previews."""
     from app.config import settings
 
@@ -131,6 +140,9 @@ async def get_project(project_id: str) -> SongProjectResponse:
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error": "project_not_found", "project_id": project_id},
         )
+    user_id = str(getattr(request.state, "user_id", "") or "")
+    if user_id and project.get("user_id") and project["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail={"error": "project_forbidden"})
     return _project_to_response(project)
 
 
