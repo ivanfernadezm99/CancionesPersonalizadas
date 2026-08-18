@@ -39,6 +39,7 @@ PUBLIC_PREFIXES: tuple[str, ...] = (
 
 NAMEID_URI = "http://schemas.microsoft.com/ws/2008/06/identity/claims/nameidentifier"
 NAMEID_URI_ASPNET = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
+EMAIL_URI = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
 ROLE_URI = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
 BUSINESS_CLAIM = "BusinessId"
 
@@ -176,6 +177,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         # Token valid — extract claims into request.state (always, including public prefixes)
         user_id = str(claims.get(NAMEID_URI, "") or claims.get(NAMEID_URI_ASPNET, "") or "")  # type: ignore[union-attr]
         request.state.user_id = user_id
+        request.state.email = str(claims.get(EMAIL_URI, "") or claims.get("email", ""))  # type: ignore[union-attr]
         request.state.role = str(claims.get(ROLE_URI, ""))  # type: ignore[union-attr]
         request.state.business_id = str(claims.get(BUSINESS_CLAIM, ""))  # type: ignore[union-attr]
 

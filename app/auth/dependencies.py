@@ -8,8 +8,26 @@ from collections.abc import Callable
 from typing import Any
 
 from fastapi import HTTPException, Request, status
+from jose.exceptions import JWTError
+
+from app.auth.middleware import EMAIL_URI, NAMEID_URI, NAMEID_URI_ASPNET, _verify_token
 
 logger = logging.getLogger(__name__)
+
+
+async def get_current_user(request: Request) -> dict[str, str]:
+    """Return the validated JWT identity required by ownership-sensitive routes."""
+    header = request.headers.get("Authorization", "")
+    if not header.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    claims, result = await _verify_token(header.removeprefix("Bearer "))
+    if claims is None or result.value != "ok":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_token")
+    user_id = str(claims.get(NAMEID_URI, "") or claims.get(NAMEID_URI_ASPNET, ""))
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user_id_required")
+    email = str(claims.get(EMAIL_URI, "") or claims.get("email", ""))
+    return {"user_id": user_id, "email": email}
 
 
 def requires_role(*allowed_roles: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
