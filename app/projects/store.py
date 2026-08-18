@@ -142,6 +142,7 @@ async def init_schema(db_path: str, conn: aiosqlite.Connection | None = None) ->
             await conn.execute("ALTER TABLE projects ADD COLUMN idea TEXT")
         with contextlib.suppress(aiosqlite.OperationalError):
             await conn.execute("ALTER TABLE projects ADD COLUMN user_id TEXT")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)")
         await _migrate_project_status(conn)
         await conn.commit()
         return
@@ -160,6 +161,7 @@ async def init_schema(db_path: str, conn: aiosqlite.Connection | None = None) ->
             await conn.execute("ALTER TABLE projects ADD COLUMN idea TEXT")
         with contextlib.suppress(aiosqlite.OperationalError):
             await conn.execute("ALTER TABLE projects ADD COLUMN user_id TEXT")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)")
         await _migrate_project_status(conn)
         await conn.commit()
     finally:
@@ -244,6 +246,30 @@ async def list_projects(user_id: str, *, db_path: str) -> list[dict[str, Any]]:
         async for row in cursor:
             projects.append(await _load_project_children(conn, dict(row)))
         return projects
+    finally:
+        await conn.close()
+
+
+async def link_project_to_user(
+    project_id: str, user_id: str, *, db_path: str,
+) -> bool:
+    """Atomically claim an unowned project; never overwrite another owner."""
+    if not user_id:
+        return False
+    conn = await _get_conn(db_path)
+    try:
+        await init_schema(db_path, conn=conn)
+        await conn.execute("BEGIN IMMEDIATE")
+        cursor = await conn.execute(
+            "UPDATE projects SET user_id = ?, updated_at = ? "
+            "WHERE id = ? AND (user_id IS NULL OR user_id = ?)",
+            (user_id, datetime.now(timezone.utc).isoformat(), project_id, user_id),
+        )
+        await conn.commit()
+        return cursor.rowcount == 1
+    except BaseException:
+        await conn.rollback()
+        raise
     finally:
         await conn.close()
 
