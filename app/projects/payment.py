@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, Request, status
 
 from app.config import settings
 from app.models import CheckoutResponse, PaymentConfirmRequest, WebhookResponse
@@ -20,7 +20,7 @@ from app.projects import store
 webhook_router = APIRouter()
 
 
-async def create_checkout(project_id: str) -> CheckoutResponse:
+async def create_checkout(project_id: str, request: Request) -> CheckoutResponse:
     """Create a Mercado Pago checkout preference via POSBackend proxy.
 
     Builds a payment payload with project info and configured SONG_PRICE,
@@ -36,6 +36,14 @@ async def create_checkout(project_id: str) -> CheckoutResponse:
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error": "project_not_found", "project_id": project_id},
         )
+
+    user_id = str(getattr(request.state, "user_id", "") or "")
+    if user_id:
+        existing = project.get("user_id")
+        if existing and existing != user_id:
+            raise HTTPException(status_code=403, detail={"error": "project_forbidden"})
+        if not existing:
+            await store.link_project_to_user(project_id, user_id, db_path=settings.DB_PATH)
 
     payload = {
         "project_id": project_id,
