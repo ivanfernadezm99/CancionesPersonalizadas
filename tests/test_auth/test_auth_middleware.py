@@ -472,7 +472,12 @@ class TestPublicPrefixes:
         """POST /api/projects should work without token (customer creates project)."""
         response = await auth_test_app.post(
             "/api/projects",
-            json={"recipient": "María", "relationship": "esposa", "genre": "pop", "mood": "romántico"},
+            json={
+                "recipient": "María",
+                "relationship": "esposa",
+                "genre": "pop",
+                "mood": "romántico",
+            },
         )
         assert response.status_code == 201
 

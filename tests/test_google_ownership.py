@@ -7,10 +7,13 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from jose import jwt
 
-
 SECRET = "test-shared-secret-0123456789abcdef"
-NAME_ID = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
-EMAIL = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
+NAME_ID = (
+    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
+)
+EMAIL = (
+    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
+)
 
 
 def token(user_id: str, email: str = "user@example.com", **extra: object) -> str:
@@ -61,10 +64,25 @@ async def test_required_user_dependency_rejects_missing_expired_and_claimless_to
 ) -> None:
     endpoint = "/api/projects/mine"
     assert (await ownership_client.get(endpoint)).status_code == 401
-    expired = token("u1", exp=int((datetime.now(timezone.utc) - timedelta(minutes=1)).timestamp()))
-    assert (await ownership_client.get(endpoint, headers={"Authorization": f"Bearer {expired}"})).status_code == 401
-    claimless = jwt.encode({"exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp())}, SECRET, algorithm="HS256")
-    assert (await ownership_client.get(endpoint, headers={"Authorization": f"Bearer {claimless}"})).status_code == 401
+    expired = token(
+        "u1",
+        exp=int(
+            (datetime.now(timezone.utc) - timedelta(minutes=1)).timestamp()
+        ),
+    )
+    auth_exp = {"Authorization": f"Bearer {expired}"}
+    assert (await ownership_client.get(endpoint, headers=auth_exp)).status_code == 401
+    claimless = jwt.encode(
+        {
+            "exp": int(
+                (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()
+            ),
+        },
+        SECRET,
+        algorithm="HS256",
+    )
+    auth_cl = {"Authorization": f"Bearer {claimless}"}
+    assert (await ownership_client.get(endpoint, headers=auth_cl)).status_code == 401
 
 
 @pytest.mark.asyncio
@@ -100,17 +118,25 @@ async def test_checkout_links_unowned_project_and_rejects_email_mismatch(
     owner = {"Authorization": f"Bearer {token('owner', 'owner@example.com')}"}
     project_id = await create_project(ownership_client, owner)
     from app.config import settings
-    from app.projects import store
     from app.models import SongProjectUpdate
+    from app.projects import store
 
-    await store.update_project(project_id, SongProjectUpdate(user_id=None), db_path=settings.DB_PATH)
+    await store.update_project(
+        project_id,
+        SongProjectUpdate(user_id=None),
+        db_path=settings.DB_PATH,
+    )
     monkeypatch.setattr(settings, "PAYMENT_GATEWAY_URL", "http://gateway")
     monkeypatch.setattr(settings, "SONG_PRICE", 5.0)
     import respx
 
     with respx.mock(base_url="http://gateway") as mock:
-        mock.post("/api/checkout").respond(200, json={"preference_id": "p", "init_point": "https://pay"})
-        response = await ownership_client.post(f"/api/projects/{project_id}/checkout", headers=owner)
+        mock.post("/api/checkout").respond(
+            200, json={"preference_id": "p", "init_point": "https://pay"},
+        )
+        response = await ownership_client.post(
+            f"/api/projects/{project_id}/checkout", headers=owner,
+        )
     assert response.status_code == 200
     project = await store.get_project(project_id, db_path=settings.DB_PATH)
     assert project is not None and project["user_id"] == "owner"

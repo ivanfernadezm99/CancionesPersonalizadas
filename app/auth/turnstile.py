@@ -38,7 +38,7 @@ async def verify_turnstile(request: Request) -> str | None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": "invalid_request", "message": "Request body must be JSON"},
-        )
+        ) from None
 
     token = body.get("turnstile_token")
     if not token:

@@ -8,7 +8,6 @@ from collections.abc import Callable
 from typing import Any
 
 from fastapi import HTTPException, Request, status
-from jose.exceptions import JWTError
 
 from app.auth.middleware import EMAIL_URI, NAMEID_URI, NAMEID_URI_ASPNET, _verify_token
 

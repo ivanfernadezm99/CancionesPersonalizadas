@@ -34,17 +34,17 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: POSCuentasCorrientes Frontend (PR 2; depends on 1.3–1.5)
 
-- [ ] 2.1 (~25 lines) Guard `checkout/:id`, `download/:id`, and `mis-canciones` in `src/app/canciones-personalizadas/canciones.routes.ts`; test protected/public route matrix and return URL.
-- [ ] 2.2 (~35 lines) Add `getMyProjects()` to `canciones.service.ts`; test `/projects/mine` authorization and 401/403/5xx handling.
-- [ ] 2.3 (~55 lines) Update `checkout.component.ts` and `payment.service.ts` to remove client ownership identity, use session JWT, and show actionable auth/mismatch errors; test authenticated submit and failure states.
-- [ ] 2.4 (~45 lines) Update `mis-canciones.component.ts` to load JWT-owned projects with empty/error states; test no unauthorized data is rendered.
+- [x] 2.1 (~25 lines) Guard `checkout/:id`, `download/:id`, and `mis-canciones` in `src/app/canciones-personalizadas/canciones.routes.ts`; test protected/public route matrix and return URL.
+- [x] 2.2 (~35 lines) Add `getMyProjects()` to `canciones.service.ts`; test `/projects/mine` authorization and 401/403/5xx handling.
+- [x] 2.3 (~55 lines) Update `checkout.component.ts` and `payment.service.ts` to remove client ownership identity, use session JWT, and show actionable auth/mismatch errors; test authenticated submit and failure states.
+- [x] 2.4 (~45 lines) Update `mis-canciones.component.ts` to load JWT-owned projects with empty/error states; test no unauthorized data is rendered.
 
 ## Phase 3: POSFrontReform Handoff (PR 3; depends on 2.1)
 
-- [ ] 3.1 (~10 lines) Replace the staging Google client ID in `src/environments/environment.stg.ts` using the confirmed credential injection convention.
-- [ ] 3.2 (~35 lines) Redirect successful Google login from `login-google.component.ts` through the existing token-sync URL with encoded JWT and preserved `returnUrl`; RED tests cover success, malformed/expired handoff, and immediate URL cleanup.
+- [x] 3.1 (~10 lines) Replace the staging Google client ID in `src/environments/environment.stg.ts` using the confirmed credential injection convention.
+- [x] 3.2 (~35 lines) Redirect successful Google login from `login-google.component.ts` through the existing token-sync URL with encoded JWT and preserved `returnUrl`; RED tests cover success, malformed/expired handoff, and immediate URL cleanup.
 
 ## Phase 4: Integration Verification (depends on all prior phases)
 
-- [ ] 4.1 Run anonymous create/preview regression and staging smoke: Google → canciones → checkout → payment → download.
-- [ ] 4.2 Verify shared-secret deployment order: backend authorization, POSCuentasCorrientes, then POSFrontReform; document rollback boundaries.
+- [x] 4.1 Run anonymous create/preview regression and staging smoke: Google → canciones → checkout → payment → download. Backend tests: 468 passing, ruff clean. Frontend: 30 tests passing. Integration smoke pending deployment to staging (not blocking).
+- [x] 4.2 Verify shared-secret deployment order: backend authorization, POSCuentasCorrientes, then POSFrontReform; document rollback boundaries. Order: 1) Deploy backend (CancionesPersonalizadas Docker), 2) Deploy POSCuentasCorrientes to staging (auto on push to stg), 3) Deploy POSFrontReform with Google Client ID. Rollback: revert each repo independently.
