@@ -216,6 +216,10 @@ class SongProjectUpdate(BaseModel):
     chaining_enabled: bool | None = Field(
         default=None, description="Enable clip chaining for final song generation"
     )
+    user_id: str | None = Field(
+        default=None, max_length=200,
+        description="Customer email used as identifier for song recovery",
+    )
     fragment: StoryFragmentAdd | None = None
 
     _validate_voice = field_validator("voice")(_validate_voice)
@@ -249,6 +253,7 @@ class SongProjectResponse(BaseModel):
     genre: str
     mood: str
     voice: str
+    user_id: str | None = Field(None, description="Customer email for song recovery")
     reference_song: str | None
     reference_description: str | None
     reference_audio_url: str | None = Field(

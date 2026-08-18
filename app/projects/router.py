@@ -64,6 +64,7 @@ def _project_to_response(project: dict[str, Any]) -> SongProjectResponse:
         genre=project["genre"],
         mood=project["mood"],
         voice=project["voice"],
+        user_id=project.get("user_id"),
         reference_song=project.get("reference_song"),
         reference_description=project.get("reference_description"),
         reference_audio_url=(
@@ -102,6 +103,20 @@ async def list_projects(request: Request) -> list[SongProjectResponse]:
 
     user_id = str(getattr(request.state, "user_id", "") or "")
     projects = await store.list_projects(user_id, db_path=settings.DB_PATH)
+    return [_project_to_response(p) for p in projects]
+
+
+@router.get("/lookup")
+async def lookup_by_email(email: str) -> list[SongProjectResponse]:
+    """Look up all paid projects by customer email for song recovery."""
+    from app.config import settings
+
+    if not email or not email.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "email_required", "message": "Email parameter is required"},
+        )
+    projects = await store.lookup_projects_by_email(email, db_path=settings.DB_PATH)
     return [_project_to_response(p) for p in projects]
 
 

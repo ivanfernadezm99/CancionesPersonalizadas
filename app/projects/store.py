@@ -248,6 +248,26 @@ async def list_projects(user_id: str, *, db_path: str) -> list[dict[str, Any]]:
         await conn.close()
 
 
+async def lookup_projects_by_email(email: str, *, db_path: str) -> list[dict[str, Any]]:
+    """Look up all paid projects for a given email address (newest first)."""
+    if not email or not email.strip():
+        return []
+    email = email.strip().lower()
+    conn = await _get_conn(db_path)
+    try:
+        await init_schema(db_path, conn=conn)
+        cursor = await conn.execute(
+            "SELECT * FROM projects WHERE LOWER(user_id) = ? ORDER BY created_at DESC",
+            (email,),
+        )
+        projects: list[dict[str, Any]] = []
+        async for row in cursor:
+            projects.append(await _load_project_children(conn, dict(row)))
+        return projects
+    finally:
+        await conn.close()
+
+
 async def update_project(
     project_id: str, data: SongProjectUpdate, *, db_path: str,
 ) -> bool:
@@ -273,6 +293,7 @@ async def update_project(
             "reference_description",
             "idea",
             "chaining_enabled",
+            "user_id",
         ):
             val = getattr(data, field, None)
             if val is not None:
