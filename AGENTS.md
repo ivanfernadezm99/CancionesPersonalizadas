@@ -27,6 +27,19 @@ Backend FastAPI para el generador de canciones personalizadas (API-only, sin UI 
 - **Módulo**: `src/app/canciones-personalizadas/` — rutas lazy montadas en `/canciones`
 - **Rutas**: `/canciones/landing` (pública), `/canciones/create`, `/canciones/preview/:id`, `/canciones/checkout/:id`, `/canciones/download/:id` (protegidas por `authGuard`)
 
+### Landing Page — PUERTA DE ENTRADA de este proyecto
+
+⚠️ **La landing pública de "Canciones personalizadas" es la puerta de entrada del proyecto.** Vive en un proyecto Angular aparte (NO en este backend, ni en POSCuentasCorrientes):
+
+- **Proyecto (en esta máquina)**: `~/Descargas/LandingPage/` — landing corporativa de **Enlaces Chaco**
+- **Repo**: `github.com/ivanfernadezm99/LandingPage.git` (rama `main`)
+- **Sección**: `src/app/app.component.html` → `<section id="canciones">` (muestras reproducibles + efecto de boliche al reproducir)
+- **Estilos**: `src/styles.scss` (muestras + boliche) — NO en `app.component.scss` (ya está al límite del budget de 20 kB)
+- **Audios de muestra**: `src/assets/canciones-samples/` (copiados desde `~/Descargas/CancionesPersonalizadas-Audio/`)
+- **Flujo**: la landing muestra las muestras → su CTA lleva a la app funcional `https://poscuentascorrientes-stage.up.railway.app/#/canciones/landing` (módulo de POSCuentasCorrientes) → checkout/pago en POSBackend.
+
+**Errores a evitar**: NO confundir la landing (LandingPage) con el módulo funcional de canciones (POSCuentasCorrientes). Cambios de la landing se pushean a `LandingPage` (rama `main`); cambios del módulo funcional, a `POSCuentasCorrientes` (rama `stg`).
+
 ### URLs
 
 | Entorno | URL |
