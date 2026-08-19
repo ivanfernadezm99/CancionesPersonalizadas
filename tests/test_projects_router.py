@@ -963,3 +963,73 @@ class TestIntegration:
             get_after = await client.get(f"/api/projects/{project_id}")
             assert get_after.status_code == 200
             assert len(get_after.json()["previews"]) == 2
+
+
+class TestUsageStats:
+    """GET /api/projects/stats — public counter of previews and full songs."""
+
+    @pytest.mark.asyncio
+    async def test_stats_counts_completed_previews_and_songs(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Seeded DB returns completed previews/final counts, publicly (no JWT)."""
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "stats.db"))
+        monkeypatch.setattr(settings, "OUTPUT_DIR", str(tmp_path / "output"))
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
+        monkeypatch.setattr(settings, "OPENCLAW_TOKEN", "test-token")
+        monkeypatch.setattr(settings, "MAX_CONCURRENT_JOBS", 5)
+        monkeypatch.setattr("app.main._active_requests", 0)
+
+        from app.projects.store import _get_conn, get_usage_stats, init_schema
+
+        db = str(tmp_path / "stats.db")
+        now = datetime.now(timezone.utc).isoformat()
+        conn = await _get_conn(db)
+        await init_schema(db, conn=conn)
+
+        # Projects (once each)
+        for pid in ("p1", "p2", "p3"):
+            await conn.execute(
+                "INSERT INTO projects (id, recipient, relationship, status, created_at, updated_at) "
+                "VALUES (?, 'X', 'pareja', 'draft', ?, ?)",
+                (pid, now, now),
+            )
+
+        # 2 previews (complete) + 1 preview (failed) + 2 finals (complete)
+        seeds = [
+            ("p1", "j1", "preview", "complete"),
+            ("p1", "j2", "final", "complete"),
+            ("p2", "j3", "preview", "complete"),
+            ("p3", "j4", "preview", "failed"),
+            ("p3", "j5", "final", "complete"),
+        ]
+        for pid, jid, jtype, jstatus in seeds:
+            await conn.execute(
+                "INSERT INTO jobs (job_id, status, params, progress, metadata, created_at, updated_at, completed_at) "
+                "VALUES (?, ?, '{}', 0.0, '{}', ?, ?, ?)",
+                (jid, jstatus, now, now, now if jstatus == "complete" else None),
+            )
+            await conn.execute(
+                "INSERT INTO project_jobs (project_id, job_id, job_type, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (pid, jid, jtype, now),
+            )
+        await conn.commit()
+        await conn.close()
+
+        # Unit: only completed jobs count.
+        stats = await get_usage_stats(db_path=db)
+        assert stats == {"previews": 2, "songs": 2}
+
+        # Endpoint is public (no token) and returns the same counts.
+        from app.main import app
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/projects/stats")
+            assert resp.status_code == 200
+            assert resp.json() == {"previews": 2, "songs": 2}

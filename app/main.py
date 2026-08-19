@@ -127,6 +127,7 @@ app.add_middleware(
         "http://localhost:8001",
         "https://poscuentascorrientes-stage.up.railway.app",
         "https://www.enlaceschaco.ar",
+        "https://app.enlaceschaco.ar",
     ],
     allow_credentials=False,
     allow_methods=["*"],

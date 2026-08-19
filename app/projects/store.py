@@ -468,3 +468,29 @@ async def get_accumulated_story(project_id: str, *, db_path: str) -> str:
         return " ".join(fragments)
     finally:
         await conn.close()
+
+
+async def get_usage_stats(*, db_path: str) -> dict[str, int]:
+    """Count completed preview and final (full-song) generations.
+
+    Public marketing stat for the landing: how many previews and full songs
+    people generated. A linked ``project_jobs`` row only counts once its
+    ``jobs`` row reaches ``complete``.
+    """
+    conn = await _get_conn(db_path)
+    try:
+        await init_schema(db_path, conn=conn)
+        async with conn.execute(
+            """SELECT pj.job_type, COUNT(*) AS n
+                 FROM project_jobs pj
+                 JOIN jobs j ON j.job_id = pj.job_id
+                WHERE j.status = 'complete'
+                GROUP BY pj.job_type"""
+        ) as cursor:
+            rows = {r["job_type"]: int(r["n"]) for r in await cursor.fetchall()}
+    finally:
+        await conn.close()
+    return {
+        "previews": rows.get("preview", 0),
+        "songs": rows.get("final", 0),
+    }

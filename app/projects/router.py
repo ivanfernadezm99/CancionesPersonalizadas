@@ -179,6 +179,18 @@ async def lookup_by_email(email: str) -> list[dict[str, str]]:
     ]
 
 
+@router.get("/stats")
+async def get_stats() -> dict[str, int]:
+    """Public usage stats for the landing counter.
+
+    Returns completed preview and full-song generations:
+    ``{"previews": int, "songs": int}``. Public (no JWT) so the marketing
+    landing can consume it directly.
+    """
+    from app.config import settings
+    return await store.get_usage_stats(db_path=settings.DB_PATH)
+
+
 @router.get("/{project_id}")
 async def get_project(project_id: str, request: Request) -> SongProjectResponse:
     """Get a project by ID with all fragments and previews."""
