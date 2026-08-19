@@ -21,9 +21,24 @@ ARTIST_REJECTION_MESSAGE = (
 
 # Curated blocklist of known-rejected artist names (RQ-TAG-02). Stored
 # lowercase and matched as a case-insensitive substring (design decision 5).
-# Seed set per RQ-TAG-02/03; extensible.
+# Seed set per RQ-TAG-02/03; extensible. Includes high-profile artists that
+# Suno rejects by name in style tags (e.g. "michael jackson" surfaced in the
+# Suno error "your tags contain artist name michael jackson").
 ARTIST_BLOCKLIST: frozenset[str] = frozenset(
-    {"los palmeras", "la mona jiménez", "juan luis guerra"}
+    {
+        "los palmeras",
+        "la mona jiménez",
+        "juan luis guerra",
+        "michael jackson",
+        "the beatles",
+        "elvis presley",
+        "queen",
+        "shakira",
+        "madonna",
+        "luis miguel",
+        "daddy yankee",
+        "bad bunny",
+    }
 )
 
 # Separator patterns (RQ-TAG-01). Applied in order (parenthesized artists

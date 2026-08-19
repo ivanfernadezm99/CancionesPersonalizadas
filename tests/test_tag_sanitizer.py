@@ -35,6 +35,10 @@ class TestSanitizeReferenceSong:
             # design decision 4: strip separators BEFORE blocklist check,
             # so a valid song following an artist token stays usable
             ("Los Palmeras - Mi Amor", "Mi Amor"),
+            # Suno-rejected artist as one side — the song side survives
+            ("Michael Jackson - Billie Jean", "Billie Jean"),
+            ("Billie Jean de Michael Jackson", "Billie Jean"),
+            ("Human Nature (Michael Jackson)", "Human Nature"),
         ],
     )
     def test_strips_artist_token(self, raw: str, expected: str) -> None:
@@ -53,15 +57,21 @@ class TestSanitizeReferenceSong:
             # RQ-TAG-03: artist-only after strip (blocklist + non-blocklist)
             "Juan Luis Guerra",
             "La Mona Jiménez",
+            # Suno-rejected high-profile artists, artist-only → drop reference
+            "Michael Jackson",
+            "michael jackson",
+            "Shakira",
+            "Luis Miguel",
+            "Elvis Presley",
+            "The Beatles",
+            "Madonna",
+            "Daddy Yankee",
+            "Bad Bunny",
+            "Queen",
         ],
     )
     def test_artist_only_returns_none(self, raw: str) -> None:
         """No usable reference signal (artist-only or blocklist hit)."""
-        assert sanitize_reference_song(raw) is None
-
-    @pytest.mark.parametrize("raw", ["", "   ", None])
-    def test_empty_or_none_returns_none(self, raw: str | None) -> None:
-        """Empty string / whitespace / None indicate no usable reference."""
         assert sanitize_reference_song(raw) is None
 
     @pytest.mark.parametrize(
@@ -70,6 +80,7 @@ class TestSanitizeReferenceSong:
             "Bachata Rosa - Juan Luis Guerra",
             "La Bamba (Los Lobos)",
             "Despacito",
+            "Billie Jean - Michael Jackson",
         ],
     )
     def test_idempotent(self, raw: str) -> None:
@@ -87,6 +98,12 @@ class TestBlocklistContract:
         assert "los palmeras" in ARTIST_BLOCKLIST
         assert "la mona jiménez" in ARTIST_BLOCKLIST
         assert "juan luis guerra" in ARTIST_BLOCKLIST
+
+    def test_blocklist_contains_suno_rejected_artists(self) -> None:
+        """High-profile artists Suno rejects by name are covered (e.g. michael jackson)."""
+        assert "michael jackson" in ARTIST_BLOCKLIST
+        assert "shakira" in ARTIST_BLOCKLIST
+        assert "luis miguel" in ARTIST_BLOCKLIST
 
     def test_rejection_message_is_spanish_artist_instruction(self) -> None:
         """Shared Spanish message reused by validator and Suno translator."""

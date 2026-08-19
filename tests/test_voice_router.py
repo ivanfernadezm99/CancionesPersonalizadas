@@ -63,15 +63,15 @@ def _client() -> AsyncClient:
 
 
 @pytest.mark.asyncio
-async def test_get_voices_jwt_enforced_contract(
+async def test_get_voices_is_public_despite_jwt_enforcement(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """GET /api/voices honors JWT enforcement (contract under enforced mode).
+    """GET /api/voices is a public (static) route even under enforced mode.
 
-    Without a Bearer token -> 401. With a valid HS256 token -> 200 + 7 voices.
-    The suite-wide autouse fixture disables enforcement, so this test sets
-    enforcement explicitly (mirroring the auth-guard test pattern).
+    It must NOT require a JWT: no token -> 200 with the voice registry. With a
+    valid HS256 token -> 200 too. (Previously voices sat behind JWT enforcement
+    and 401'd with ``invalid_token`` expotsing an invalid/expired caller token.)
     """
     _setup(tmp_path, monkeypatch)
     from app.config import settings
@@ -88,10 +88,10 @@ async def test_get_voices_jwt_enforced_contract(
     monkeypatch.setattr(settings, "JWT_AUTH_ENFORCED", True)
 
     async with _client() as client:
-        # No token -> 401 unauthorized
+        # No token -> 200 (public route, radio enforcement irrelevant)
         no_token = await client.get("/api/voices")
-        assert no_token.status_code == 401
-        assert no_token.json()["error"] == "unauthorized"
+        assert no_token.status_code == 200
+        assert len(no_token.json()) == 7
 
         # Valid HS256 token -> 200 with 7 voices
         token = _make_hs256_token()
