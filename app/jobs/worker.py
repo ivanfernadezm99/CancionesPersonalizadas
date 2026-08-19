@@ -13,6 +13,7 @@ from typing import Any
 from app.config import settings
 from app.jobs import get_job, update_status
 from app.lyrics import generate as lyrics_generate
+from app.lyrics.style_translator import translate_style
 from app.models import GenerateRequest
 from app.music import extend_duration
 from app.music import generate as music_generate
@@ -81,6 +82,9 @@ async def job_worker(job_id: str) -> None:
             mood=params.mood,
             reference_description=ref_desc,
             reference_song=sanitized_song,
+            reference_style=await translate_style(
+                ref_song, params.genre, params.mood,
+            ),
         )
 
         generated_path = await music_generate(

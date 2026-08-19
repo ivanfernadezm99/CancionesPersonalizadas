@@ -16,6 +16,7 @@ from app.jobs import create_job as create_job_record
 from app.jobs import get_job, update_status
 from app.jobs.worker import _format_lyrics_for_music
 from app.lyrics import generate as lyrics_generate
+from app.lyrics.style_translator import translate_style
 from app.models import GenerateRequest, JobCreateResponse, SongProjectCreate
 from app.music import extend_duration
 from app.music import generate as music_generate
@@ -255,6 +256,9 @@ async def project_worker(job_id: str) -> None:
             mood=params.mood,
             reference_song=sanitized_song,
             reference_description=reference_description,
+            reference_style=await translate_style(
+                reference_song, params.genre, params.mood,
+            ),
         )
 
         # Suno chaining guard: if MUSIC_PROVIDER=suno, chaining is irrelevant

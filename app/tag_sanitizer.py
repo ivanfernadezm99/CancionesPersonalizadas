@@ -41,6 +41,81 @@ ARTIST_BLOCKLIST: frozenset[str] = frozenset(
     }
 )
 
+# Suno-safe style descriptors for well-known artists (RQ-TAG-05). When a
+# reference points at one of these artists, instead of dropping the name and
+# leaving a meaningless token (e.g. "Michael Jackson - Bad" → "Bad") we emit a
+# written musical descriptor WITHOUT naming the artist. Matched by the same
+# case-insensitive substring rule as the blocklist. Keys mirror blocklist
+# entries; seed set includes the blocklisted artists plus extras.
+ARTIST_STYLE_DESCRIPTORS: dict[str, str] = {
+    "michael jackson": (
+        "energético pop-funk de los años 80, bajo funky, ritmo hipnótico, "
+        "ganchos melódicos y voz soul brillante"
+    ),
+    "the beatles": (
+        "pop-rock melódico británico de los 60, armonías vocales, "
+        "guitarras limpias y progresiones sencillas y emotivas"
+    ),
+    "elvis presley": (
+        "rock and roll clásico, ritmo swingado, voz grave carismática, "
+        "energía de los 50"
+    ),
+    "queen": (
+        "rock operático grandioso, coros épicos, piano dramático y "
+        "guitarras potentes"
+    ),
+    "shakira": (
+        "pop latino con acento árabe, percusión y caderas, voz versátil "
+        "y ganchos pegadizos"
+    ),
+    "madonna": (
+        "pop dance ochentero, sintetizadores, ritmo bailable y actitud "
+        "vibrante"
+    ),
+    "luis miguel": (
+        "bolero y pop romántico sofisticado, arreglos orquestales de "
+        "mano suaves y voz aterciopelada"
+    ),
+    "daddy yankee": (
+        "reggaetón bailable, dembow, ritmo urbano pegadizo y actitud "
+        "cantar"
+    ),
+    "bad bunny": (
+        "urbano latino y reggaetón moderno, beats melódicos actuales y "
+        "flow con carácter"
+    ),
+    "los palmeras": (
+        "cumbia santafesina con acordeón, ritmo bailable y alegre, "
+        "coros festivos"
+    ),
+    "la mona jiménez": (
+        "cuarteto cordobés bailable, ritmo marcado, energía y "
+        "fiesta popular"
+    ),
+    "juan luis guerra": (
+        "bachata romántica con guitarra, merengue suave y voz cálida "
+        "caribeña"
+    ),
+}
+
+
+def artist_style_for(reference: str | None) -> str | None:
+    """Return a Suno-safe style descriptor when ``reference`` names a known artist.
+
+    ``None`` when the reference does not clearly name a blocklisted artist, in
+    which case the caller falls back to normal sanitization. Case-insensitive
+    substring match, mirroring ``_is_blocked``.
+    """
+    if not reference:
+        return None
+    lowered = reference.lower()
+    for artist, descriptor in ARTIST_STYLE_DESCRIPTORS.items():
+        if artist in lowered:
+            return descriptor
+    return None
+
+
+
 # Separator patterns (RQ-TAG-01). Applied in order (parenthesized artists
 # are trailing, so parens first avoids mis-splitting "Mi Viejo (En Vivo)"):
 #   "Bachata Rosa - Juan Luis Guerra"  →  "Bachata Rosa"

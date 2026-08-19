@@ -25,7 +25,10 @@ To add a new voice type:
 from __future__ import annotations
 
 from app.models import VoiceConfig
-from app.tag_sanitizer import sanitize_reference_song
+from app.tag_sanitizer import (
+    artist_style_for,
+    sanitize_reference_song,
+)
 from app.voice.registry import VOICE_REGISTRY, get_voice
 
 
@@ -40,6 +43,7 @@ def build_prompt(
     mood: str,
     reference_song: str | None = None,
     reference_description: str | None = None,
+    reference_style: str | None = None,
 ) -> str:
     """Build a Lyria 3 prompt combining voice descriptor, genre, and mood.
 
@@ -49,6 +53,9 @@ def build_prompt(
         mood: Emotional tone (e.g. "romántica", "festiva").
         reference_song: Optional reference song name for style inspiration.
         reference_description: Optional detailed style description from audio analysis.
+        reference_style: Optional pre-translated, Suno-safe style descriptor
+            (from the offline artist map or the LLM translator). Appended
+            verbatim; must NOT name specific artists.
 
     Returns:
         A Spanish prompt string suitable for Lyria 3 music generation.
@@ -73,11 +80,19 @@ def build_prompt(
     )
     if reference_description:
         prompt += f" {reference_description}"
+    elif reference_style:
+        # Pre-translated Suno-safe descriptor (LLM or offline artist map).
+        prompt += f" {reference_style}."
     elif reference_song:
-        # Generation-time guard (RQ-VOI-05, RQ-TAG-04): sanitize before
-        # injecting so legacy stored values ("Song - Artist") never reach the
-        # Lyria/Suno prompt; a "no usable reference" result appends nothing.
-        song = sanitize_reference_song(reference_song)
-        if song:
-            prompt += f" Inspirada en el estilo de {song}."
+        # Known artist → its curated Suno-safe descriptor (RQ-TAG-05).
+        artist_style = artist_style_for(reference_song)
+        if artist_style:
+            prompt += f" {artist_style}."
+        else:
+            # Generation-time guard (RQ-VOI-05, RQ-TAG-04): sanitize before
+            # injecting so legacy stored values ("Song - Artist") never reach
+            # the Lyria/Suno prompt; a "no usable reference" appends nothing.
+            song = sanitize_reference_song(reference_song)
+            if song:
+                prompt += f" Inspirada en el estilo de {song}."
     return prompt

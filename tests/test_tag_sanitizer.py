@@ -11,6 +11,7 @@ import pytest
 from app.tag_sanitizer import (
     ARTIST_BLOCKLIST,
     ARTIST_REJECTION_MESSAGE,
+    artist_style_for,
     sanitize_reference_song,
 )
 
@@ -111,3 +112,24 @@ class TestBlocklistContract:
         assert "artista" in message
         assert "quitá" in message
         assert "canción" in message
+
+
+class TestArtistStyleFor:
+    """Curated Suno-safe style descriptors for known artists (RQ-TAG-05)."""
+
+    def test_known_artist_returns_descriptor(self) -> None:
+        """Michael Jackson maps to a pop-funk descriptor (not a meaningless token)."""
+        descriptor = artist_style_for("Michael Jackson - Bad")
+        assert descriptor is not None
+        assert "funk" in descriptor.lower()
+        assert "michael" not in descriptor.lower()
+
+    def test_non_artist_returns_none(self) -> None:
+        """Clean song references have no curated descriptor (fall back to sanitize)."""
+        assert artist_style_for("Despacito") is None
+        assert artist_style_for(None) is None
+        assert artist_style_for("") is None
+
+    def test_artist_only_returns_descriptor(self) -> None:
+        """An artist-only input still yields the descriptor instead of dropping."""
+        assert artist_style_for("Michael Jackson") is not None
