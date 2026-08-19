@@ -471,21 +471,19 @@ async def get_accumulated_story(project_id: str, *, db_path: str) -> str:
 
 
 async def get_usage_stats(*, db_path: str) -> dict[str, int]:
-    """Count completed preview and final (full-song) generations.
+    """Count preview and final (full-song) generations.
 
-    Public marketing stat for the landing: how many previews and full songs
-    people generated. A linked ``project_jobs`` row only counts once its
-    ``jobs`` row reaches ``complete``.
+    Counts every linked ``project_jobs`` row — each preview/final generation
+    attempt — regardless of job completion, so the landing counter reflects
+    ALL usage (including test/re-generation previews). The ``jobs`` table rows
+    are pruned by the TTL cleanup scheduler, so joining to ``jobs`` would
+    under-count; ``project_jobs`` is the source of truth for generations.
     """
     conn = await _get_conn(db_path)
     try:
         await init_schema(db_path, conn=conn)
         async with conn.execute(
-            """SELECT pj.job_type, COUNT(*) AS n
-                 FROM project_jobs pj
-                 JOIN jobs j ON j.job_id = pj.job_id
-                WHERE j.status = 'complete'
-                GROUP BY pj.job_type"""
+            "SELECT job_type, COUNT(*) AS n FROM project_jobs GROUP BY job_type"
         ) as cursor:
             rows = {r["job_type"]: int(r["n"]) for r in await cursor.fetchall()}
     finally:

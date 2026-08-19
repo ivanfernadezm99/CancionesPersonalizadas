@@ -969,12 +969,12 @@ class TestUsageStats:
     """GET /api/projects/stats — public counter of previews and full songs."""
 
     @pytest.mark.asyncio
-    async def test_stats_counts_completed_previews_and_songs(
+    async def test_stats_counts_all_previews_and_songs(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Seeded DB returns completed previews/final counts, publicly (no JWT)."""
+        """Counts every project_jobs row by type (jobs pruned by TTL cleanup)."""
         from app.config import settings
 
         monkeypatch.setattr(settings, "DB_PATH", str(tmp_path / "stats.db"))
@@ -999,20 +999,16 @@ class TestUsageStats:
                 (pid, now, now),
             )
 
-        # 2 previews (complete) + 1 preview (failed) + 2 finals (complete)
+        # 3 previews + 2 finals in project_jobs — NO jobs rows at all (they were
+        # cleaned up / not linked); every project_jobs row counts as usage.
         seeds = [
-            ("p1", "j1", "preview", "complete"),
-            ("p1", "j2", "final", "complete"),
-            ("p2", "j3", "preview", "complete"),
-            ("p3", "j4", "preview", "failed"),
-            ("p3", "j5", "final", "complete"),
+            ("p1", "j1", "preview"),
+            ("p1", "j2", "final"),
+            ("p2", "j3", "preview"),
+            ("p3", "j4", "preview"),
+            ("p3", "j5", "final"),
         ]
-        for pid, jid, jtype, jstatus in seeds:
-            await conn.execute(
-                "INSERT INTO jobs (job_id, status, params, progress, metadata, created_at, updated_at, completed_at) "
-                "VALUES (?, ?, '{}', 0.0, '{}', ?, ?, ?)",
-                (jid, jstatus, now, now, now if jstatus == "complete" else None),
-            )
+        for pid, jid, jtype in seeds:
             await conn.execute(
                 "INSERT INTO project_jobs (project_id, job_id, job_type, created_at) "
                 "VALUES (?, ?, ?, ?)",
@@ -1021,9 +1017,9 @@ class TestUsageStats:
         await conn.commit()
         await conn.close()
 
-        # Unit: only completed jobs count.
+        # Unit: counts every row by type (no job-status filter).
         stats = await get_usage_stats(db_path=db)
-        assert stats == {"previews": 2, "songs": 2}
+        assert stats == {"previews": 3, "songs": 2}
 
         # Endpoint is public (no token) and returns the same counts.
         from app.main import app
@@ -1032,4 +1028,4 @@ class TestUsageStats:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/projects/stats")
             assert resp.status_code == 200
-            assert resp.json() == {"previews": 2, "songs": 2}
+            assert resp.json() == {"previews": 3, "songs": 2}
