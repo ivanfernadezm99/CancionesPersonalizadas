@@ -6,25 +6,19 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.tag_sanitizer import ARTIST_REJECTION_MESSAGE, sanitize_reference_song
-
 
 def _validate_reference_song(v: str | None) -> str | None:
-    """Sanitize reference_song and reject artist-only values (RQ-PRJ-01/02).
+    """Accept any non-empty reference_song (artist names included, RQ-TAG-05).
 
-    Empty/absent values pass through unchanged (RQ-PRJ-01 empty-accepted).
-    Non-empty values are sanitized through the shared tag sanitizer: safe
-    ``"Song - Artist"`` / ``"Song de Artist"`` / ``"Song (Artist)"`` patterns
-    are stripped to the song token; a non-empty value that sanitizes to
-    ``None`` (artist-only or blocklist hit) raises ValueError → HTTP 422 with
-    the shared Spanish message.
+    Previously this rejected references that sanitized to ``None`` (artist-only
+    or a blocklist hit) with a 422. Now that generation-time translates artist
+    references into Suno-safe style descriptors (``translate_style``), we let
+    the raw reference through (trimmed) so the translator can map the artist.
+    The shared sanitizer still runs at generation time for the lyrics/prompt.
     """
-    if v is None or not v.strip():
-        return v
-    sanitized = sanitize_reference_song(v)
-    if sanitized is None:
-        raise ValueError(ARTIST_REJECTION_MESSAGE)
-    return sanitized
+    if v is None:
+        return None
+    return v.strip()
 
 
 def _validate_voice(v: str | None) -> str | None:

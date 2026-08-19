@@ -7,11 +7,7 @@ GenerateRequest stays untouched for legacy backward compatibility.
 
 from __future__ import annotations
 
-import pytest
-from pydantic import ValidationError
-
 from app.models import GenerateRequest, SongProjectCreate, SongProjectUpdate
-from app.tag_sanitizer import ARTIST_REJECTION_MESSAGE
 
 
 def make_create(**overrides: object) -> dict[str, object]:
@@ -28,20 +24,19 @@ def make_create(**overrides: object) -> dict[str, object]:
 
 
 class TestSongProjectCreateReferenceSong:
-    """Validator behavior on POST /api/projects (RQ-PRJ-01)."""
+    """Validator behavior on POST /api/projects (RQ-PRJ-01, RQ-TAG-05)."""
 
-    def test_strips_artist_token_on_create(self) -> None:
-        """Safe 'Song - Artist' pattern is stripped before storing."""
+    def test_keeps_reference_together(self) -> None:
+        """reference_song (even 'Song - Artist') is kept so the translator can map it."""
         model = SongProjectCreate(
             **make_create(reference_song="Bachata Rosa - Juan Luis Guerra"),
         )
-        assert model.reference_song == "Bachata Rosa"
+        assert model.reference_song == "Bachata Rosa - Juan Luis Guerra"
 
-    def test_artist_only_raises_spanish_message(self) -> None:
-        """Artist-only value raises ValueError → 422 with friendly Spanish."""
-        with pytest.raises(ValidationError) as exc:
-            SongProjectCreate(**make_create(reference_song="Los Palmeras"))
-        assert ARTIST_REJECTION_MESSAGE in str(exc.value)
+    def test_artist_only_accepted(self) -> None:
+        """Artist-only value is now ACCEPTED (generation-time translates it)."""
+        model = SongProjectCreate(**make_create(reference_song="Los Palmeras"))
+        assert model.reference_song == "Los Palmeras"
 
     def test_empty_string_passes_through(self) -> None:
         """Empty reference_song remains valid (RQ-PRJ-01 empty-accepted)."""
@@ -53,24 +48,33 @@ class TestSongProjectCreateReferenceSong:
         model = SongProjectCreate(**make_create())
         assert model.reference_song is None
 
+    def test_whitespace_only_is_trimmed_to_empty(self) -> None:
+        """Whitespace-only reference_song is trimmed to an empty string."""
+        model = SongProjectCreate(**make_create(reference_song="   "))
+        assert model.reference_song == ""
+
 
 class TestSongProjectUpdateReferenceSong:
-    """Validator behavior on PATCH /api/projects/{id} (RQ-PRJ-02)."""
+    """Validator behavior on PATCH /api/projects/{id} (RQ-PRJ-02, RQ-TAG-05)."""
 
-    def test_strips_artist_token_on_patch(self) -> None:
-        """Safe 'Song de Artist' pattern is stripped on patch too."""
+    def test_keeps_reference_together_on_patch(self) -> None:
+        """Raw 'Song de Artist' is preserved so the translator can map it."""
         model = SongProjectUpdate(reference_song="Bailando de Enrique Iglesias")
-        assert model.reference_song == "Bailando"
+        assert model.reference_song == "Bailando de Enrique Iglesias"
 
-    def test_artist_only_raises_spanish_message(self) -> None:
-        """Artist-only value on patch raises ValueError → 422, change not stored."""
-        with pytest.raises(ValidationError) as exc:
-            SongProjectUpdate(reference_song="La Mona Jiménez")
-        assert ARTIST_REJECTION_MESSAGE in str(exc.value)
+    def test_artist_only_accepted(self) -> None:
+        """Artist-only value on patch is accepted and stored (no 422)."""
+        model = SongProjectUpdate(reference_song="La Mona Jiménez")
+        assert model.reference_song == "La Mona Jiménez"
 
     def test_empty_string_passes_through(self) -> None:
         """Empty reference_song on patch remains valid."""
         model = SongProjectUpdate(reference_song="")
+        assert model.reference_song == ""
+
+    def test_whitespace_only_is_trimmed_to_empty(self) -> None:
+        """Whitespace-only reference on patch is trimmed to an empty string."""
+        model = SongProjectUpdate(reference_song="   ")
         assert model.reference_song == ""
 
 
