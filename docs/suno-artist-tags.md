@@ -91,3 +91,42 @@ público vía `PUBLIC_PREFIXES`.
   reconstruir el contenedor local.
 - No bloquear en bloque toda la generación ante este error: el diseño actual
   descarta la referencia problemática y deja generar la canción con el resto.
+
+## Mejora: traducir la referencia a estilo Suno-safe (2026-08-19, commit `64b05ec`)
+
+El fix anterior evitaba el error de Suno, pero cuando el usuario pedía un estilo
+de un artista (ej. "Michael Jackson - Bad"), el sanitizador dejaba solo la
+palabra que sobraba ("Bad") → la canción no se parecía en nada.
+
+Ahora el sistema **traduce la referencia a un descriptor musical escrito sin
+nombres de artistas** (Suno-safe) en dos capas:
+
+1. **Mapa offline** (`ARTIST_STYLE_DESCRIPTORS` en `app/tag_sanitizer.py`):
+   artista conocido → descriptor fijo. Ej:
+   - `"Michael Jackson - Bad"` → `"energético pop-funk de los años 80, bajo
+     funky, ritmo hipnótico, ganchos melódicos y voz soul brillante"`
+   - `"Luis Miguel - ..."` → bolero/pop romántico orquestal.
+   - Cubre todos los artistas del blocklist (+ unos extra).
+2. **Traductor por LLM** (`app/lyrics/style_translator.py`,
+   `translate_style()`): si la referencia no está en el mapa, un LLM la
+   interpreta y devuelve un descriptor de 1-2 frases (prompt que prohíbe
+   nombrar artistas/canciones). Best-effort: ante cualquier fallo devuelve
+   `None` y se conserva el comportamiento previo.
+
+Integración: `app/voice/__init__.py::build_prompt` acepta `reference_style`
+y usa `artist_style_for` en la rama de `reference_song`; los workers
+(`app/projects/__init__.py::project_worker` y `app/jobs/worker.py`) llaman a
+`translate_style(...)` y pasan el resultado como `reference_style`.
+
+### Nota: audio de referencia (Cover)
+El **modo Cover** ya está soportado en el flujo de proyectos: si el usuario
+sube un audio de referencia, `project_worker` lo pasa a
+`music_generate(reference_audio=...)` → Suno `upload-cover`. Ese es el único
+camino "fiel" a un artista puntual (Suno igual no acepta nombres); con subir un
+audio parecido a lo que quiere se acerca al sonido deseado.
+
+### Tests
+- `tests/test_tag_sanitizer.py::TestArtistStyleFor`
+- `tests/test_voice_prompt.py` (artista → descriptor; `reference_style` param)
+- `tests/test_style_translator.py` (fast path offline + LLM best-effort)
+- Suite completa: **491 passed**.
