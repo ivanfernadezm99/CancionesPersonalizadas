@@ -453,6 +453,23 @@ class TestPublicEndpoints:
         response = await auth_test_app.get("/")
         assert response.status_code == 200
 
+    @pytest.mark.asyncio
+    async def test_voices_public(
+        self, auth_test_app: AsyncClient,
+    ) -> None:
+        """GET /api/voices is a static registry and must not require a JWT.
+
+        Previously this route 401'd with ``invalid_token`` when the caller held
+        an invalid/expired token, spamming the console — the registry is public
+        data mirrored in the frontend fallback.
+        """
+        response = await auth_test_app.get("/api/voices")
+        assert response.status_code == 200
+        payload = response.json()
+        assert isinstance(payload, list)
+        assert len(payload) > 0
+
+
 
 class TestPublicPrefixes:
     """Customer-facing route prefixes bypass JWT auth entirely."""
