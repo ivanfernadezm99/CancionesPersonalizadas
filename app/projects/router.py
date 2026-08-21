@@ -71,6 +71,14 @@ async def _check_project_ownership(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={"error": "project_forbidden"},
             )
+    else:
+        # Auto-adopt unowned projects when an authenticated user accesses
+        # them, so projects created before login become recoverable via
+        # GET /api/projects/mine ("Mis canciones").
+        user_id = str(getattr(request.state, "user_id", "") or "")
+        if user_id:
+            await store.link_project_to_user(project_id, user_id, db_path=settings.DB_PATH)
+            project["user_id"] = user_id
     return project
 
 
