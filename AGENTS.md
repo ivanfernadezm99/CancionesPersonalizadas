@@ -101,3 +101,38 @@ Se obtienen en https://www.mercadopago.com.ar/developers/panel → **Tus integra
 - **Credenciales de producción**: `Access Token` (`APP_USR-...`) + `Public Key` (`APP_USR-...`).
 
 Para staging/testing usar las de **prueba** (sandbox, `IsSandbox=true` por default). Se setean en Railway → POSBackend → `Checkout__MercadoPago__AccessToken` / `Checkout__MercadoPago__PublicKey`.
+
+## Test del circuito SIN pagar (scripts/test-circuit.py)
+
+Recorre login → create → ownership → fragments → candado 402 → checkout → **pago SIMULADO** → final → stream, sin gastar un peso ni tocar Mercado Pago de verdad.
+
+```bash
+# Circuito completo (necesita el contenedor local arriba, puerto 8001)
+python3 scripts/test-circuit.py
+
+# Solo pasos sin generación de música (no consume créditos del provider)
+python3 scripts/test-circuit.py --steps login,create,ownership,fragments,gate,checkout,pay
+
+# Contra el backend deployado
+python3 scripts/test-circuit.py --base-url https://canciones.enlaceschaco.ar
+
+# Login REAL contra POSBackend (email+password) en vez del JWT de prueba
+python3 scripts/test-circuit.py --email x@y.z --password '...'
+```
+
+**Cómo funciona el "pago simulado":**
+- El candado real del circuito es el webhook `POST /api/webhooks/payment-confirmed` (`app/projects/payment.py`): solo valida el header `X-Webhook-Secret` contra `PAYMENT_WEBHOOK_SECRET` (en `.env`) y marca el proyecto como `paid`. Es **idempotente**.
+- El script dispara ese mismo endpoint (el que POSBackend usa en vivo) → el proyecto pasa a `paid` → `/final` (que exige `status == "paid"`, sino `402 payment_required`, `app/projects/router.py`) queda habilitado. Cero plata, cero MP.
+- El paso `checkout` es **best-effort**: crea la preference de MP vía POSBackend si está alcanzable, pero si falla no rompe el circuito (el pago igual se simula por webhook).
+
+**Cómo se hace el login:**
+- Este backend NO tiene login propio (`app/auth/router.py` solo expone `GET /api/auth/health`). Solo valida JWT HS256 firmado por POSBackend con `JWT_SHARED_SECRET` (`app/config.py`, `app/auth/middleware.py`).
+- El `user_id` sale de los claims ASP.NET `http://schemas.microsoft.com/ws/2008/06/identity/claims/nameidentifier` (o el legacy `.../ws/2005/05/identity/claims/nameidentifier`), NO del claim `sub`. El email de `.../claims/emailaddress` (o `email` plano).
+- Por defecto el script **acuña un JWT de prueba** con ese claim set (igual al que emite POSBackend). Con `--email/--password` hace login real contra `POST /api/Auth/Login?authType=Interno` de POSBackend y usa ese JWT (el mismo que autentica el front).
+- `--steps login` demuestra que el login importa: con token → `GET /api/projects/mine` 200; sin token → 401. `--steps ownership` demuestra que otro usuario recibiría **403** y sin token **401**.
+
+**Dónde ver el ID del proyecto:** el proyecto creado muestra su `Project ID` al final del script + link del front (`/canciones/preview/<id>`). En el front de POSCuentasCorrientes, la página de preview muestra el ID del proyecto (ver `src/app/canciones-personalizadas/preview/preview.component.ts`). El ID también vive en la URL como route param `:id` en `/canciones/preview/:id`, `/canciones/checkout/:id` y `/canciones/download/:id`.
+
+**Notas:**
+- El `--steps final` y `--steps stream` **sí consumen créditos** del provider de música (Lyria/Suno), como en producción. El resto no.
+- Requiere `JWT_SHARED_SECRET` y `PAYMENT_WEBHOOK_SECRET` en `.env` (el script los lee de ahí, no los imprime).
