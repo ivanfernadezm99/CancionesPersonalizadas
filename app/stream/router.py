@@ -197,7 +197,10 @@ async def stream_audio(
         # paid content.
         project = await _get_project_by_job(job_id, db_path=settings.DB_PATH)
         user_id = str(getattr(request.state, "user_id", "") or "")
-        if user_id and project is not None and project.get("user_id") not in (None, user_id):
+        from app.config import is_superadmin
+        if (user_id and project is not None
+                and project.get("user_id") not in (None, user_id)
+                and not is_superadmin(user_id)):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={"error": "project_forbidden"},

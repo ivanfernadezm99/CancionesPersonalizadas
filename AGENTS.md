@@ -146,3 +146,14 @@ Para construir una base de clientes con teléfono (mensajes, promociones), el fl
 - **POSCuentasCorrientes** (rama `stg`): la página de preview muestra `Contacto: email · teléfono` leídos del JWT del usuario logueado.
 
 ⚠️ El JWT solo tiene el `Phone` claim después de que el usuario lo guarda (o en logins posteriores). Antes, la preview muestra solo el email.
+
+## Superadmin — visibilidad de todos los proyectos
+
+- `SUPERADMIN_USER_IDS` (`.env`/`.env.docker`, coma-separado) lista los IDs (numéricos de POSBackend `User.Id`) o emails que ven **TODOS** los proyectos. En local = `5` (ivanfernandezm99@gmail.com).
+- `GET /api/projects/mine` ("Mis canciones"): para superadmin devuelve todos (`list_all_projects`); para usuarios comunes solo los suyos (`user_id`).
+- La comprobación de ownership (`_check_project_ownership`, `/api/stream` full) hace bypass para superadmin: puede abrir/reproducir cualquier proyecto.
+- Los proyectos creados sin login se **adoptan automáticamente** al ser accedidos por un usuario autenticado (`link_project_to_user`, atómico).
+
+## Persistencia de previews/canciones (NO borrar)
+
+El cleanup TTL (`app/jobs/cleanup.py`, `JOB_TTL_HOURS`) **NUNCA borra jobs con status `complete`** ni sus archivos (los reproduce el panel "Mis canciones"). Solo limpia jobs viejos no completos, y al borrarlos elimina también sus filas de `project_jobs` (evita huérfanas que rompían la serialización). Si algún día se quiere volver a purgar, hay que decidirlo explícitamente.

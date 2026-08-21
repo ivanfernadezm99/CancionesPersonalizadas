@@ -31,10 +31,15 @@ async def cleanup_old_jobs(
         await init_db(conn)
 
         # Get all jobs and check age in Python
-        cursor = await conn.execute("SELECT job_id, created_at FROM jobs")
+        cursor = await conn.execute("SELECT job_id, status, created_at FROM jobs")
         all_jobs = await cursor.fetchall()
 
         for row in all_jobs:
+            # Completed jobs are replayable assets (preview/full songs): NEVER
+            # delete them nor their files — the songs panel replays them.
+            if row["status"] == "complete":
+                continue
+
             job_id = row["job_id"]
             created_at_str = row["created_at"]
 
@@ -48,8 +53,10 @@ async def cleanup_old_jobs(
             if age_hours < ttl_hours:
                 continue
 
-            # Delete job (transitions first due to FK)
+            # Delete job (transitions first due to FK), plus its project_jobs
+            # link so no orphaned preview rows remain.
             await conn.execute("DELETE FROM job_transitions WHERE job_id = ?", (job_id,))
+            await conn.execute("DELETE FROM project_jobs WHERE job_id = ?", (job_id,))
             await conn.execute("DELETE FROM jobs WHERE job_id = ?", (job_id,))
             deleted.append(job_id)
 

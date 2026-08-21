@@ -204,7 +204,7 @@ async def _load_project_children(
     project["fragments"] = [dict(r) async for r in frag_cursor]
 
     pj_cursor = await conn.execute(
-        """SELECT pj.job_id, pj.job_type, pj.created_at, j.status
+        """SELECT pj.job_id, pj.job_type, pj.created_at, COALESCE(j.status, 'unknown') AS status
            FROM project_jobs pj
            LEFT JOIN jobs j ON j.job_id = pj.job_id
            WHERE pj.project_id = ?
@@ -241,6 +241,22 @@ async def list_projects(user_id: str, *, db_path: str) -> list[dict[str, Any]]:
         cursor = await conn.execute(
             "SELECT * FROM projects WHERE user_id = ? ORDER BY created_at DESC",
             (user_id,),
+        )
+        projects: list[dict[str, Any]] = []
+        async for row in cursor:
+            projects.append(await _load_project_children(conn, dict(row)))
+        return projects
+    finally:
+        await conn.close()
+
+
+async def list_all_projects(*, db_path: str) -> list[dict[str, Any]]:
+    """List ALL projects (superadmin view), newest first, with fragments/previews."""
+    conn = await _get_conn(db_path)
+    try:
+        await init_schema(db_path, conn=conn)
+        cursor = await conn.execute(
+            "SELECT * FROM projects ORDER BY created_at DESC",
         )
         projects: list[dict[str, Any]] = []
         async for row in cursor:

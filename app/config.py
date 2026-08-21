@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     PAYMENT_GATEWAY_URL: str = ""
     PAYMENT_WEBHOOK_SECRET: str = ""
 
+    # Superadmin: comma-separated user IDs (POSBackend numeric User.Id) or
+    # emails that can see ALL projects, not only their own.
+    SUPERADMIN_USER_IDS: str = ""
+
     # Cloudflare Turnstile (anti-bot)
     TURNSTILE_SECRET_KEY: str = ""
     TURNSTILE_SITE_KEY: str = ""
@@ -105,3 +109,14 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def is_superadmin(user_id: str = "", email: str = "") -> bool:
+    """True when the user is listed in SUPERADMIN_USER_IDS (ids or emails)."""
+    raw = settings.SUPERADMIN_USER_IDS or ""
+    entries = {e.strip().lower() for e in raw.split(",") if e.strip()}
+    if not entries:
+        return False
+    user_id = str(user_id or "").strip().lower()
+    email = str(email or "").strip().lower()
+    return user_id in entries or email in entries

@@ -47,7 +47,7 @@ async def _check_project_ownership(
     Returns the project dict. Raises 404 if not found, 401 if unauthenticated
     on an owned project, or 403 if the authenticated user doesn't match.
     """
-    from app.config import settings
+    from app.config import settings, is_superadmin
 
     project = await store.get_project(project_id, db_path=settings.DB_PATH)
     if project is None:
@@ -61,12 +61,13 @@ async def _check_project_ownership(
     owner = project.get("user_id")
     if owner:
         user_id = str(getattr(request.state, "user_id", "") or "")
+        email = str(getattr(request.state, "email", "") or "")
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail={"error": "unauthorized"},
             )
-        if user_id != owner:
+        if user_id != owner and not is_superadmin(user_id, email):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={"error": "project_forbidden"},
@@ -97,7 +98,7 @@ def _project_to_response(project: dict[str, Any]) -> SongProjectResponse:
         ProjectPreview(
             job_id=p["job_id"],
             job_type=p["job_type"],
-            status=p.get("status", "unknown"),
+            status=p.get("status") or "unknown",
             created_at=p["created_at"],
         )
         for p in project.get("previews", [])
@@ -155,9 +156,17 @@ async def list_projects(request: Request) -> list[SongProjectResponse]:
 async def my_projects(
     user: dict[str, str] = Depends(get_current_user),  # noqa: B008
 ) -> list[SongProjectResponse]:
-    """List only projects owned by the authenticated JWT user."""
-    from app.config import settings
-    projects = await store.list_projects(user["user_id"], db_path=settings.DB_PATH)
+    """List the projects of the authenticated user.
+
+    Superadmin (SUPERADMIN_USER_IDS) sees ALL projects; regular users see
+    only their own.
+    """
+    from app.config import settings, is_superadmin
+
+    if is_superadmin(user.get("user_id", ""), user.get("email", "")):
+        projects = await store.list_all_projects(db_path=settings.DB_PATH)
+    else:
+        projects = await store.list_projects(user["user_id"], db_path=settings.DB_PATH)
     return [_project_to_response(p) for p in projects]
 
 
