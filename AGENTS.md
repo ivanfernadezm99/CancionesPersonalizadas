@@ -157,3 +157,7 @@ Para construir una base de clientes con teléfono (mensajes, promociones), el fl
 ## Persistencia de previews/canciones (NO borrar)
 
 El cleanup TTL (`app/jobs/cleanup.py`, `JOB_TTL_HOURS`) **NUNCA borra jobs con status `complete`** ni sus archivos (los reproduce el panel "Mis canciones"). Solo limpia jobs viejos no completos, y al borrarlos elimina también sus filas de `project_jobs` (evita huérfanas que rompían la serialización). Si algún día se quiere volver a purgar, hay que decidirlo explícitamente.
+
+### Importación manual de canciones (recuperación)
+
+Cuando un mp3 sobrevive pero su fila de `jobs` fue purgada por el TTL (ej. las canciones de `~/Descargas/CancionesPersonalizadas-Audio/`), se re-linkea así: copiá el mp3 a `output/<job_id>/generated.mp3` (job_id tipo `manual-*`), insertá la fila en `jobs` (status `complete`, params con `project_id`) y el link en `project_jobs` (job_type `preview`/`final`). Cuidado: `project_jobs` alimenta el contador de la landing (`/api/projects/stats`), así que al importar/borrar filas el contador cambia. El contador muestra `previews + songs + MANUAL_SONGS_OFFSET(1)`.
