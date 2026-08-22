@@ -337,6 +337,29 @@ class DeepSeekProvider(OpenAICompatProvider):
         )
 
 
+class OpenCodeGoProvider(OpenAICompatProvider):
+    """Lyrics generation via OpenCode Go (openai-compatible router).
+
+    Uses the ``https://opencode.ai/zen/go/v1`` mount with the OpenCode Go API
+    key. The router serves reasoning models (deepseek-v4-flash/pro, ...) so a
+    large ``max_tokens`` budget plus the ``reasoning_content`` fallback apply
+    exactly as for the direct DeepSeek provider.
+    """
+
+    def __init__(self, api_key: str, model: str = "deepseek-v4-flash") -> None:
+        super().__init__(
+            name="opencode-go",
+            api_key=api_key,
+            model=model,
+            base_url="https://opencode.ai/zen/go/v1",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            max_tokens=8000,
+        )
+
+
 # Zen model → cascade entry name mapping (keeps result.provider transparent).
 _ZEN_MODEL_ENTRY_NAMES: dict[str, str] = {
     "big-pickle": "zen-big-pickle",

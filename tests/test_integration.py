@@ -853,6 +853,7 @@ class TestStartupValidation:
         monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
         monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
         monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "")
+        monkeypatch.setattr(settings, "OPENCODE_GO_API_KEY", "")
 
         # 1. Detection
         assert settings.has_any_llm_key() is False

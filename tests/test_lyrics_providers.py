@@ -14,6 +14,7 @@ from app.lyrics.providers import (
     GeminiProvider,
     LyricsGenerationError,
     OpenAIProvider,
+    OpenCodeGoProvider,
     OpenRouterProvider,
     ZenProvider,
     cascade_providers,
@@ -434,18 +435,64 @@ class TestParseLyricsJson:
         assert len(result.verses) == 2
 
 
+class TestOpenCodeGoProvider:
+    """Tests for the OpenCode Go provider (zen/go/v1 mount)."""
+
+    def test_default_model_and_max_tokens(self) -> None:
+        provider = OpenCodeGoProvider(api_key="sk-test123")
+        assert provider.model == "deepseek-v4-flash"
+        assert provider.max_tokens == 8000
+
+    @pytest.mark.asyncio
+    async def test_generate_returns_lyrics_result(
+        self, sample_prompt: str, valid_lyrics_json: str,
+    ) -> None:
+        with respx.mock as mock:
+            mock.post("https://opencode.ai/zen/go/v1/chat/completions").mock(
+                return_value=httpx.Response(
+                    200, json={"choices": [{"message": {"content": valid_lyrics_json}}]},
+                )
+            )
+            provider = OpenCodeGoProvider(api_key="sk-test123")
+            result = await provider.generate(sample_prompt)
+            assert result is not None
+            assert result.provider == "opencode-go"
+            assert result.title_suggestion == "María, Mi Amor"
+
+    @pytest.mark.asyncio
+    async def test_generate_falls_back_to_reasoning_content(
+        self, sample_prompt: str, valid_lyrics_json: str,
+    ) -> None:
+        with respx.mock as mock:
+            mock.post("https://opencode.ai/zen/go/v1/chat/completions").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "choices": [{
+                            "message": {"content": "", "reasoning_content": valid_lyrics_json},
+                        }],
+                    },
+                )
+            )
+            provider = OpenCodeGoProvider(api_key="sk-test123")
+            result = await provider.generate(sample_prompt)
+            assert result is not None
+            assert result.provider == "opencode-go"
+
+
 class TestBuildProviders:
     """Tests for _build_providers() cascade ordering."""
 
     def test_zen_providers_first_when_zen_key_set(
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Zen primary/secondary come first, then deepseek, openai, gemini, openrouter."""
+        """Zen primary/secondary come first, then opencode-go, deepseek, openai..."""
         from app.lyrics import _build_providers
 
         monkeypatch.setattr(settings, "ZEN_API_KEY", "zen-test-key")
         monkeypatch.setattr(settings, "ZEN_PRIMARY_MODEL", "big-pickle")
         monkeypatch.setattr(settings, "ZEN_SECONDARY_MODEL", "nemotron-3-ultra-free")
+        monkeypatch.setattr(settings, "OPENCODE_GO_API_KEY", "sk-go-key")
         monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "sk-test-key")
         monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
         monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-test-key")
@@ -453,7 +500,8 @@ class TestBuildProviders:
 
         providers = _build_providers()
         assert [p.name for p in providers] == [
-            "zen-big-pickle", "zen-nemotron", "deepseek", "openai", "gemini", "openrouter",
+            "zen-big-pickle", "zen-nemotron", "opencode-go", "deepseek",
+            "openai", "gemini", "openrouter",
         ]
 
     def test_no_zen_without_zen_key(
@@ -463,6 +511,7 @@ class TestBuildProviders:
         from app.lyrics import _build_providers
 
         monkeypatch.setattr(settings, "ZEN_API_KEY", "")
+        monkeypatch.setattr(settings, "OPENCODE_GO_API_KEY", "")
         monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "")
         monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
         monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-test-key")
@@ -480,6 +529,7 @@ class TestBuildProviders:
         monkeypatch.setattr(settings, "ZEN_API_KEY", "zen-test-key")
         monkeypatch.setattr(settings, "ZEN_PRIMARY_MODEL", "big-pickle")
         monkeypatch.setattr(settings, "ZEN_SECONDARY_MODEL", "nemotron-3-ultra-free")
+        monkeypatch.setattr(settings, "OPENCODE_GO_API_KEY", "")
         monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "sk-deepseek")
         monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
         monkeypatch.setattr(settings, "GEMINI_API_KEY", "")

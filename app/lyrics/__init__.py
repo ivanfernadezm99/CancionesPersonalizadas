@@ -17,6 +17,7 @@ from app.lyrics.providers import (
     GeminiProvider,
     LyricsGenerationError,
     OpenAIProvider,
+    OpenCodeGoProvider,
     OpenRouterProvider,
     ZenProvider,
     cascade_providers,
@@ -36,6 +37,13 @@ def _build_providers() -> list[BaseProvider]:
         )
         providers.append(
             ZenProvider(api_key=settings.ZEN_API_KEY, model=settings.ZEN_SECONDARY_MODEL)
+        )
+    if settings.OPENCODE_GO_API_KEY:
+        providers.append(
+            OpenCodeGoProvider(
+                api_key=settings.OPENCODE_GO_API_KEY,
+                model=settings.OPENCODE_GO_MODEL,
+            )
         )
     if settings.DEEPSEEK_API_KEY:
         providers.append(

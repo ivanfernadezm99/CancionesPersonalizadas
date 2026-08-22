@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_MODEL: str = "deepseek-v4-flash"
+    OPENCODE_GO_API_KEY: str = ""
+    OPENCODE_GO_MODEL: str = "deepseek-v4-flash"
 
     # Zen (OpenCode) model selection — cascade primary/secondary
     ZEN_PRIMARY_MODEL: str = "big-pickle"
