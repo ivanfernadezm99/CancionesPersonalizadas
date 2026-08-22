@@ -166,6 +166,28 @@ Para construir una base de clientes con teléfono (mensajes, promociones), el fl
 
 ## Persistencia de previews/canciones (NO borrar)
 
+### De dónde toma "Mis canciones" los audios (volúmenes Docker)
+
+⚠️ **No hay dos fuentes (contenedor vs file manager): son los MISMOS archivos del host, bind-mounted dentro del contenedor.**
+
+| Qué | Dónde vive (host) | Montado en contenedor | Uso |
+|-----|-------------------|------------------------|-----|
+| **Metadatos** (jobs, `project_jobs`, params, status) | `jobs.db` (SQLite, host) | `/app/data/jobs.db` | `GET /api/projects/mine` arma la lista del panel |
+| **Audio** (mp3 real) | `output/<job_id>/generated.mp3` (host) | `/app/output/<job_id>/generated.mp3` | `/api/stream/<job_id>` reproduce/descarga |
+
+`docker-compose.yml`:
+```yaml
+volumes:
+  - ./output:/app/output
+  - ./jobs.db:/app/data/jobs.db
+```
+
+Config: `app/config.py` (`DB_PATH="jobs.db"`, `OUTPUT_DIR="./output"`) + `.env.docker` (`DB_PATH=/app/data/jobs.db`, `OUTPUT_DIR=/app/output`).
+
+**Consecuencias prácticas:**
+- El file manager muestra exactamente lo que sirve el contenedor: borrar un mp3 en `output/` rompe la reproducción de esa canción; borrar una fila en `jobs.db` la saca del panel.
+- La importación manual se hace sobre los archivos host (`output/<job_id>/generated.mp3` + filas en `jobs.db`) y el contenedor los ve al instante (volumen en vivo).
+
 El cleanup TTL (`app/jobs/cleanup.py`, `JOB_TTL_HOURS`) **NUNCA borra jobs con status `complete`** ni sus archivos (los reproduce el panel "Mis canciones"). Solo limpia jobs viejos no completos, y al borrarlos elimina también sus filas de `project_jobs` (evita huérfanas que rompían la serialización). Si algún día se quiere volver a purgar, hay que decidirlo explícitamente.
 
 ### Importación manual de canciones (recuperación)
