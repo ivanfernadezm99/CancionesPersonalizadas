@@ -150,6 +150,36 @@ class TestCheckout:
         resp = await payment_client.post("/api/projects/nonexistent/checkout")
         assert resp.status_code == 404, resp.text
 
+    @pytest.mark.asyncio
+    async def test_checkout_already_paid(self, payment_client: AsyncClient) -> None:
+        """Checkout of an already-paid project should not downgrade its status."""
+        project_id = await _create_project(payment_client)
+
+        # Mark project as paid via webhook
+        await payment_client.post(
+            "/api/webhooks/payment-confirmed",
+            json={
+                "project_id": project_id,
+                "payment_id": "mp-pay-001",
+                "status": "approved",
+            },
+            headers={"X-Webhook-Secret": "test-webhook-secret-123"},
+        )
+
+        # Verify status is paid before checkout
+        get_resp = await payment_client.get(f"/api/projects/{project_id}")
+        assert get_resp.json()["status"] == "paid"
+
+        # Call checkout again — should NOT downgrade status
+        resp = await payment_client.post(f"/api/projects/{project_id}/checkout")
+
+        # Project status must remain 'paid' (not payment_pending)
+        # Even if the API returns 409, the side effect should not downgrade
+        get_resp2 = await payment_client.get(f"/api/projects/{project_id}")
+        assert get_resp2.json()["status"] == "paid", (
+            f"Project downgraded to {get_resp2.json()['status']} after checkout!"
+        )
+
 
 # ── Webhook Tests ──────────────────────────────────────────────────────────────
 

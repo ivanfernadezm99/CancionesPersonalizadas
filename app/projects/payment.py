@@ -81,6 +81,13 @@ async def create_checkout(project_id: str, request: Request) -> CheckoutResponse
         if not existing:
             await store.link_project_to_user(project_id, user_id, db_path=settings.DB_PATH)
 
+    # Never downgrade a paid project via checkout
+    if project["status"] == "paid":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "already_paid", "message": "Este proyecto ya está pagado"},
+        )
+
     payload = {
         "project_id": project_id,
         "amount": settings.SONG_PRICE,
