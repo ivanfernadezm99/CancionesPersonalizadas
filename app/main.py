@@ -245,11 +245,12 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
 
 # ── Register Routers ─────────────────────────────────────────────────────────
 
-from app.projects.payment import webhook_router  # noqa: E402
+from app.projects.payment import payment_pages_router, webhook_router  # noqa: E402
 from app.projects.router import router as projects_router  # noqa: E402
 
 app.include_router(auth_router)
 app.include_router(stream_router)
 app.include_router(projects_router)
 app.include_router(webhook_router)
+app.include_router(payment_pages_router)
 app.include_router(voice_router)

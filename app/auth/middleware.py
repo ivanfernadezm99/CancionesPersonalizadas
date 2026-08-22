@@ -23,6 +23,8 @@ PUBLIC_ROUTES: set[str] = {
     "/api/auth/health",
     "/api/webhooks/payment-confirmed",
     "/api/voices",
+    "/payment/success",
+    "/payment/failure",
 }
 
 # Customer-facing routes — no POS JWT required

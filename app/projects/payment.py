@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 
 from app.config import settings
 from app.models import CheckoutResponse, PaymentConfirmRequest, WebhookResponse
@@ -18,6 +19,41 @@ from app.projects import store
 
 # Webhook router — standalone, not under /api/projects
 webhook_router = APIRouter()
+
+# Public payment-page redirects (MP success/failure URLs)
+payment_pages_router = APIRouter()
+
+
+def _payment_redirect_target(project_id: str, route: str) -> str:
+    """Build the frontend redirect target for a payment result page.
+
+    Prefers FRONTEND_BASE_URL; falls back to PUBLIC_BASE_URL's /payment/* page
+    (which itself redirects to the frontend) when the frontend is not configured.
+    """
+    base = (settings.FRONTEND_BASE_URL or settings.PUBLIC_BASE_URL).rstrip("/")
+    if not base:
+        return "/"
+    if not project_id:
+        return base
+    return f"{base}/#/canciones/{route}/{project_id}"
+
+
+@payment_pages_router.get("/payment/success")
+async def payment_success_page(project_id: str = "") -> RedirectResponse:
+    """Redirect the payer back to the frontend download page after a paid checkout."""
+    return RedirectResponse(
+        url=_payment_redirect_target(project_id, "download"),
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+    )
+
+
+@payment_pages_router.get("/payment/failure")
+async def payment_failure_page(project_id: str = "") -> RedirectResponse:
+    """Redirect the payer back to the frontend checkout page to retry."""
+    return RedirectResponse(
+        url=_payment_redirect_target(project_id, "checkout"),
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+    )
 
 
 async def create_checkout(project_id: str, request: Request) -> CheckoutResponse:
@@ -50,15 +86,26 @@ async def create_checkout(project_id: str, request: Request) -> CheckoutResponse
         "amount": settings.SONG_PRICE,
         "currency": "ARS",
         "description": f"Personalized song for {project.get('recipient', 'unknown')}",
+        # Redirect to the frontend directly. The download page auto-forwards to
+        # checkout while the webhook is still pending. Fallback to the public
+        # /payment/* pages (which redirect) only when no frontend is configured.
         "success_url": (
-            f"{settings.PUBLIC_BASE_URL}/payment/success?project_id={project_id}"
-            if settings.PUBLIC_BASE_URL
-            else ""
+            f"{settings.FRONTEND_BASE_URL.rstrip('/')}/#/canciones/download/{project_id}"
+            if settings.FRONTEND_BASE_URL
+            else (
+                f"{settings.PUBLIC_BASE_URL}/payment/success?project_id={project_id}"
+                if settings.PUBLIC_BASE_URL
+                else ""
+            )
         ),
         "failure_url": (
-            f"{settings.PUBLIC_BASE_URL}/payment/failure?project_id={project_id}"
-            if settings.PUBLIC_BASE_URL
-            else ""
+            f"{settings.FRONTEND_BASE_URL.rstrip('/')}/#/canciones/checkout/{project_id}"
+            if settings.FRONTEND_BASE_URL
+            else (
+                f"{settings.PUBLIC_BASE_URL}/payment/failure?project_id={project_id}"
+                if settings.PUBLIC_BASE_URL
+                else ""
+            )
         ),
     }
 

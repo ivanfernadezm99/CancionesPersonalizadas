@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     # Public URL for serving reference audio
     PUBLIC_BASE_URL: str = ""
 
+    # Frontend base URL for payment success/failure redirects (hash-routed Angular app)
+    FRONTEND_BASE_URL: str = ""
+
     # Clip chaining settings
     CLIP_DURATION: int = 30
     CLIP_CROSSFADE_MS: int = 2500
