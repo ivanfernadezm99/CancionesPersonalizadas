@@ -339,6 +339,11 @@ class TestZenProvider:
 class TestDeepSeekProvider:
     """Tests for the DeepSeek OpenAI-compatible provider."""
 
+    def test_default_max_tokens_large_enough_for_reasoning_models(self) -> None:
+        """deepseek-v4 is a reasoning model: it needs a large token budget."""
+        provider = DeepSeekProvider(api_key="sk-test123")
+        assert provider.max_tokens == 8000
+
     @pytest.mark.asyncio
     async def test_generate_returns_lyrics_result(
         self, sample_prompt: str, valid_lyrics_json: str,
@@ -357,6 +362,30 @@ class TestDeepSeekProvider:
             assert result.provider == "deepseek"
             assert result.title_suggestion == "María, Mi Amor"
             assert len(result.verses) == 2
+
+    @pytest.mark.asyncio
+    async def test_generate_falls_back_to_reasoning_content(
+        self, sample_prompt: str, valid_lyrics_json: str,
+    ) -> None:
+        """When content is empty, reasoning_content must be tried before failing."""
+        with respx.mock as mock:
+            mock.post("https://api.deepseek.com/v1/chat/completions").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "choices": [{
+                            "message": {
+                                "content": "",
+                                "reasoning_content": "vamos a componer... " + valid_lyrics_json,
+                            },
+                        }],
+                    },
+                )
+            )
+            provider = DeepSeekProvider(api_key="sk-test123")
+            result = await provider.generate(sample_prompt)
+            assert result is not None
+            assert result.provider == "deepseek"
 
     @pytest.mark.asyncio
     async def test_generate_returns_none_on_api_error(self, sample_prompt: str) -> None:
@@ -383,6 +412,26 @@ class TestDeepSeekProvider:
             provider = DeepSeekProvider(api_key="sk-test123")
             result = await provider.generate(sample_prompt)
             assert result is None
+
+
+class TestParseLyricsJson:
+    """Tests for the hardened _parse_lyrics_json (extracts JSON from prose)."""
+
+    def test_parses_prose_wrapped_json(self, valid_lyrics_json: str) -> None:
+        """Models sometimes wrap the JSON in prose; the parser must extract it."""
+        from app.lyrics.providers import _parse_lyrics_json
+
+        text = "Aquí está tu canción como pediste:\n" + valid_lyrics_json + "\nEspero que le guste."
+        result = _parse_lyrics_json(text)
+        assert result is not None
+        assert result.title_suggestion == "María, Mi Amor"
+
+    def test_parses_plain_json(self, valid_lyrics_json: str) -> None:
+        from app.lyrics.providers import _parse_lyrics_json
+
+        result = _parse_lyrics_json(valid_lyrics_json)
+        assert result is not None
+        assert len(result.verses) == 2
 
 
 class TestBuildProviders:

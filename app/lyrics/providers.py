@@ -55,7 +55,16 @@ def _parse_lyrics_json(text: str) -> LyricsResult | None:
                     break
             text = "\n".join(lines[start:end]).strip()
 
-        data = json.loads(text)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            # Models sometimes wrap the JSON in prose. Extract the first
+            # balanced { ... } block and retry before giving up.
+            start = text.find("{")
+            end = text.rfind("}")
+            if start == -1 or end <= start:
+                raise
+            data = json.loads(text[start : end + 1])
 
         verses = []
         for v in data.get("verses", []):
@@ -230,13 +239,15 @@ class OpenAICompatProvider(BaseProvider):
         model: str,
         base_url: str,
         headers: dict[str, str],
+        max_tokens: int = 1500,
     ) -> None:
         super().__init__(api_key, name)
         self.model = model
+        self.max_tokens = max_tokens
         self.client = httpx.AsyncClient(
             base_url=base_url,
             headers=headers,
-            timeout=60.0,
+            timeout=90.0,
         )
 
     async def generate(self, prompt: str) -> LyricsResult | None:
@@ -254,7 +265,7 @@ class OpenAICompatProvider(BaseProvider):
                         {"role": "user", "content": prompt},
                     ],
                     "temperature": 0.8,
-                    "max_tokens": 1500,
+                    "max_tokens": self.max_tokens,
                 },
             )
             response.raise_for_status()
@@ -266,6 +277,11 @@ class OpenAICompatProvider(BaseProvider):
                 return None
 
             content = choices[0].get("message", {}).get("content")
+            if not content:
+                # Reasoning models (DeepSeek v4, Zen) can spend the whole token
+                # budget on reasoning_content and leave content empty. When that
+                # happens, fall back to reasoning_content before giving up.
+                content = choices[0].get("message", {}).get("reasoning_content")
             if not content:
                 logger.warning("%s returned empty content", self.name)
                 return None
@@ -300,9 +316,11 @@ class OpenRouterProvider(OpenAICompatProvider):
 class DeepSeekProvider(OpenAICompatProvider):
     """Lyrics generation via DeepSeek API (OpenAI-compatible).
 
-    Uses the official DeepSeek endpoint; the v4 chat models (deepseek-v4-flash/
-    deepseek-v4-pro) answer with ``content`` only, so the shared
-    OpenAICompatProvider parsing applies unchanged.
+    Uses the official DeepSeek endpoint. deepseek-v4-* are reasoning models:
+    with a small token budget they spend everything on ``reasoning_content``
+    and return empty ``content``, so this provider requests a large
+    ``max_tokens`` and reads ``content`` (falling back to
+    ``reasoning_content`` only when content is empty).
     """
 
     def __init__(self, api_key: str, model: str = "deepseek-v4-flash") -> None:
@@ -315,6 +333,7 @@ class DeepSeekProvider(OpenAICompatProvider):
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
+            max_tokens=8000,
         )
 
 
@@ -328,10 +347,10 @@ _ZEN_MODEL_ENTRY_NAMES: dict[str, str] = {
 class ZenProvider(OpenAICompatProvider):
     """Lyrics generation via OpenCode Zen (free, OpenAI-compatible endpoint).
 
-    Zen reasoning models (Big Pickle, Nemotron) return the JSON answer in
-    ``message.content`` — this provider reads ``content`` only and ignores
-    ``reasoning_content``/``reasoning_details``. Empty content yields None so
-    the cascade falls through to the next provider.
+    Zen reasoning models (Big Pickle, Nemotron) answer in ``message.content``
+    (falls back to ``reasoning_content`` when content is empty). A large
+    ``max_tokens`` budget avoids reasoning models exhausting the budget
+    before composing the JSON answer.
     """
 
     def __init__(self, api_key: str, model: str) -> None:
@@ -346,6 +365,7 @@ class ZenProvider(OpenAICompatProvider):
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
+            max_tokens=8000,
         )
 
 
