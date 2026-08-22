@@ -297,6 +297,27 @@ class OpenRouterProvider(OpenAICompatProvider):
         )
 
 
+class DeepSeekProvider(OpenAICompatProvider):
+    """Lyrics generation via DeepSeek API (OpenAI-compatible).
+
+    Uses the official DeepSeek endpoint; the v4 chat models (deepseek-v4-flash/
+    deepseek-v4-pro) answer with ``content`` only, so the shared
+    OpenAICompatProvider parsing applies unchanged.
+    """
+
+    def __init__(self, api_key: str, model: str = "deepseek-v4-flash") -> None:
+        super().__init__(
+            name="deepseek",
+            api_key=api_key,
+            model=model,
+            base_url="https://api.deepseek.com/v1",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+
+
 # Zen model → cascade entry name mapping (keeps result.provider transparent).
 _ZEN_MODEL_ENTRY_NAMES: dict[str, str] = {
     "big-pickle": "zen-big-pickle",

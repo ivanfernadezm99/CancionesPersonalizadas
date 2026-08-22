@@ -13,6 +13,7 @@ from app.config import settings
 from app.lyrics.prompts import SYSTEM_PROMPT, build_user_prompt
 from app.lyrics.providers import (
     BaseProvider,
+    DeepSeekProvider,
     GeminiProvider,
     LyricsGenerationError,
     OpenAIProvider,
@@ -35,6 +36,10 @@ def _build_providers() -> list[BaseProvider]:
         )
         providers.append(
             ZenProvider(api_key=settings.ZEN_API_KEY, model=settings.ZEN_SECONDARY_MODEL)
+        )
+    if settings.DEEPSEEK_API_KEY:
+        providers.append(
+            DeepSeekProvider(api_key=settings.DEEPSEEK_API_KEY, model=settings.DEEPSEEK_MODEL)
         )
     if settings.OPENAI_API_KEY:
         providers.append(OpenAIProvider(api_key=settings.OPENAI_API_KEY))

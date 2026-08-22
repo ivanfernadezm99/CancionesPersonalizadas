@@ -6,9 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+import respx
 
 from app.config import settings
 from app.lyrics.providers import (
+    DeepSeekProvider,
     GeminiProvider,
     LyricsGenerationError,
     OpenAIProvider,
@@ -334,25 +336,75 @@ class TestZenProvider:
 # ── Cascade Order Tests (Zen first) ─────────────────────────────────────────
 
 
+class TestDeepSeekProvider:
+    """Tests for the DeepSeek OpenAI-compatible provider."""
+
+    @pytest.mark.asyncio
+    async def test_generate_returns_lyrics_result(
+        self, sample_prompt: str, valid_lyrics_json: str,
+    ) -> None:
+        """generate() should return LyricsResult on successful API call."""
+        with respx.mock as mock:
+            mock.post("https://api.deepseek.com/v1/chat/completions").mock(
+                return_value=httpx.Response(
+                    200, json={"choices": [{"message": {"content": valid_lyrics_json}}]},
+                )
+            )
+            provider = DeepSeekProvider(api_key="sk-test123")
+            result = await provider.generate(sample_prompt)
+            assert result is not None
+            assert isinstance(result, LyricsResult)
+            assert result.provider == "deepseek"
+            assert result.title_suggestion == "María, Mi Amor"
+            assert len(result.verses) == 2
+
+    @pytest.mark.asyncio
+    async def test_generate_returns_none_on_api_error(self, sample_prompt: str) -> None:
+        """generate() should return None on API errors (429 etc.)."""
+        with respx.mock as mock:
+            mock.post("https://api.deepseek.com/v1/chat/completions").mock(
+                return_value=httpx.Response(429, text="rate limited"),
+            )
+            provider = DeepSeekProvider(api_key="sk-test123")
+            result = await provider.generate(sample_prompt)
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_generate_returns_none_on_parse_failure(
+        self, sample_prompt: str,
+    ) -> None:
+        """generate() should return None when the content is not valid JSON."""
+        with respx.mock as mock:
+            mock.post("https://api.deepseek.com/v1/chat/completions").mock(
+                return_value=httpx.Response(
+                    200, json={"choices": [{"message": {"content": "not valid json"}}]},
+                )
+            )
+            provider = DeepSeekProvider(api_key="sk-test123")
+            result = await provider.generate(sample_prompt)
+            assert result is None
+
+
 class TestBuildProviders:
     """Tests for _build_providers() cascade ordering."""
 
     def test_zen_providers_first_when_zen_key_set(
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Zen primary/secondary come first, then openai, gemini, openrouter."""
+        """Zen primary/secondary come first, then deepseek, openai, gemini, openrouter."""
         from app.lyrics import _build_providers
 
         monkeypatch.setattr(settings, "ZEN_API_KEY", "zen-test-key")
         monkeypatch.setattr(settings, "ZEN_PRIMARY_MODEL", "big-pickle")
         monkeypatch.setattr(settings, "ZEN_SECONDARY_MODEL", "nemotron-3-ultra-free")
+        monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "sk-test-key")
         monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
         monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-test-key")
         monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "or-test-key")
 
         providers = _build_providers()
         assert [p.name for p in providers] == [
-            "zen-big-pickle", "zen-nemotron", "openai", "gemini", "openrouter",
+            "zen-big-pickle", "zen-nemotron", "deepseek", "openai", "gemini", "openrouter",
         ]
 
     def test_no_zen_without_zen_key(
@@ -362,12 +414,32 @@ class TestBuildProviders:
         from app.lyrics import _build_providers
 
         monkeypatch.setattr(settings, "ZEN_API_KEY", "")
+        monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "")
         monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test-key")
         monkeypatch.setattr(settings, "GEMINI_API_KEY", "gemini-test-key")
         monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "or-test-key")
 
         providers = _build_providers()
         assert [p.name for p in providers] == ["openai", "gemini", "openrouter"]
+
+    def test_deepseek_after_zen_when_only_deepseek_set(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """DeepSeek joins the cascade after Zen when only Zen + DeepSeek are set."""
+        from app.lyrics import _build_providers
+
+        monkeypatch.setattr(settings, "ZEN_API_KEY", "zen-test-key")
+        monkeypatch.setattr(settings, "ZEN_PRIMARY_MODEL", "big-pickle")
+        monkeypatch.setattr(settings, "ZEN_SECONDARY_MODEL", "nemotron-3-ultra-free")
+        monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "sk-deepseek")
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+        monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
+        monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "")
+
+        providers = _build_providers()
+        assert [p.name for p in providers] == [
+            "zen-big-pickle", "zen-nemotron", "deepseek",
+        ]
 
 
 # ── Cascade Tests ────────────────────────────────────────────────────────────

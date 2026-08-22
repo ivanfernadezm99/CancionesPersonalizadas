@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 
 from app.config import settings
 from app.jobs import create_job as create_job_record
@@ -37,6 +38,69 @@ _LEGACY_VOICE_MAP: dict[str, str] = {
     "duo": "female",
     "children": "es-espana-child",
 }
+
+
+def _classify_section_line(line: str) -> str | None:
+    """Map a lyric line to a section marker ("[Verse N]", "[Chorus]", "[Bridge]").
+
+    Accepts the autodraft spelling (``Estrofa 1``, ``Estribillo``, ``Puente``),
+    an English spelling (``Verse``, ``Chorus``, ``Bridge``), with optional
+    brackets and trailing colon. Uses a full-line match so regular lyric lines
+    that merely start with a marker word (e.g. a line beginning "coro") are
+    never mistaken for headers. Returns None for regular lyric lines.
+    """
+    text = line.strip()
+    verse = re.match(r"^\[?(?:estrofa|verse|verso)\s*(\d*)\]?\s*:?\s*$", text, re.IGNORECASE)
+    if verse:
+        number = int(verse.group(1)) if verse.group(1) else 1
+        return f"[Verse {number}]"
+    if re.match(r"^\[?(?:estribillo|chorus)\]?\s*:?\s*$", text, re.IGNORECASE):
+        return "[Chorus]"
+    if re.match(r"^\[?(?:puente|bridge)\]?\s*:?\s*$", text, re.IGNORECASE):
+        return "[Bridge]"
+    return None
+
+
+def _story_to_lyrics_if_complete(story: str) -> str | None:
+    """Extract music-ready lyrics from accumulated story fragments.
+
+    When the fragments already contain a complete lyric structure — e.g. the
+    autodraft saved ``Estrofa N / Estribillo / Puente`` sections, or the user
+    pasted ``[Verse N] ... [Chorus] ...`` — reuse them verbatim instead of
+    letting the LLM re-compose different lyrics. Requires at least one verse
+    section and one chorus section to consider the story "complete" (free-form
+    anecdotes have neither and keep the LLM path).
+    """
+    if not story or not story.strip():
+        return None
+
+    sections: list[tuple[str, list[str]]] = []
+    current: tuple[str, list[str]] | None = None
+    for raw_line in story.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        marker = _classify_section_line(line)
+        if marker is not None:
+            current = [marker, []]
+            sections.append(current)
+        elif current is not None:
+            current[1].append(line)
+
+    if not sections:
+        return None
+    has_verse = any(marker.startswith("[Verse") for marker, _ in sections)
+    has_chorus = any(marker == "[Chorus]" for marker, _ in sections)
+    if not (has_verse and has_chorus):
+        return None
+
+    parts: list[str] = []
+    for marker, lines in sections:
+        if not lines:
+            continue
+        parts.append(marker)
+        parts.extend(lines)
+    return "\n".join(parts)
 
 
 def _normalize_voice(voice: str | None) -> str:
@@ -230,25 +294,40 @@ async def project_worker(job_id: str) -> None:
         params_dict = json.loads(job["params"])
         params = GenerateRequest(**params_dict)
 
-        # 1. Lyrics generation
-        await update_status(
-            job_id, "lyrics_generating", progress=0.2, db_path=settings.DB_PATH,
-        )
-        logger.info("Project worker: generating lyrics for job %s", job_id)
+        # 1. Lyrics. Reuse the user's lyrics when the story fragments already
+        # contain a complete lyric structure (autodraft "Estrofa/Estribillo/"
+        # "Puente" or pasted "[Verse]/[Chorus]"). Only generate via LLM for
+        # free-form stories so the paid song matches what the user approved.
+        custom_lyrics = _story_to_lyrics_if_complete(params.story or "")
+        if custom_lyrics:
+            lyrics_text = custom_lyrics
+            lyrics_provider = "custom_fragments"
+            title_suggestion = params.recipient
+            logger.info(
+                "Project worker: using user-provided lyrics from fragments for job %s",
+                job_id,
+            )
+        else:
+            await update_status(
+                job_id, "lyrics_generating", progress=0.2, db_path=settings.DB_PATH,
+            )
+            logger.info("Project worker: generating lyrics for job %s", job_id)
 
-        lyrics_result = await lyrics_generate(
-            recipient=params.recipient,
-            relationship=params.relationship,
-            occasion=params.occasion,
-            genre=params.genre,
-            mood=params.mood,
-            story=params.story,
-            idea=getattr(params, "idea", None),
-            reference_song=sanitized_song,
-            reference_description=reference_description,
-        )
+            lyrics_result = await lyrics_generate(
+                recipient=params.recipient,
+                relationship=params.relationship,
+                occasion=params.occasion,
+                genre=params.genre,
+                mood=params.mood,
+                story=params.story,
+                idea=getattr(params, "idea", None),
+                reference_song=sanitized_song,
+                reference_description=reference_description,
+            )
 
-        lyrics_text = _format_lyrics_for_music(lyrics_result)
+            lyrics_text = _format_lyrics_for_music(lyrics_result)
+            lyrics_provider = lyrics_result.provider
+            title_suggestion = lyrics_result.title_suggestion
 
         voice_prompt = build_prompt(
             voice_id=params.voice,
@@ -341,8 +420,8 @@ async def project_worker(job_id: str) -> None:
             **metadata,
             "duration_extended": extended,
             "stitching_used": stitching_used,
-            "lyrics_provider": lyrics_result.provider,
-            "title_suggestion": lyrics_result.title_suggestion,
+            "lyrics_provider": lyrics_provider,
+            "title_suggestion": title_suggestion,
         }
         await update_status(
             job_id,

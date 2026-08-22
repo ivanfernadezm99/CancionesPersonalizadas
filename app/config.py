@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     OPENROUTER_API_KEY: str = ""
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
 
     # Zen (OpenCode) model selection — cascade primary/secondary
     ZEN_PRIMARY_MODEL: str = "big-pickle"
