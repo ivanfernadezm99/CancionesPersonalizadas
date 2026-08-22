@@ -242,7 +242,19 @@ async def update_project(
     return _project_to_response(project)
 
 
-COMPLETED_STATUSES = frozenset({"paid", "completed"})
+# A project is locked once a final song has actually been generated (or its
+# legacy status is completed). A paid project that still only has a 30s preview
+# remains editable so the user can tweak the lyrics before converting to the
+# full-length song.
+COMPLETED_STATUSES = frozenset({"completed"})
+
+
+def _has_complete_final(project: dict[str, Any]) -> bool:
+    """True when the project already has a complete final song job."""
+    return any(
+        p.get("job_type") == "final" and p.get("status") == "complete"
+        for p in project.get("previews", [])
+    )
 
 
 @router.put("/{project_id}/fragments")
@@ -253,16 +265,17 @@ async def replace_fragments(
 ) -> SongProjectResponse:
     """Replace the full story fragment list of a project.
 
-    Returns 409 Conflict if the project is already paid or completed.
+    Returns 409 Conflict once the project is completed or a final song has
+    been generated. A paid project with only a preview remains editable.
     """
     project = await _check_project_ownership(project_id, request)
 
-    if project["status"] in COMPLETED_STATUSES:
+    if project["status"] in COMPLETED_STATUSES or _has_complete_final(project):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "error": "project_locked",
-                "message": "Fragments cannot be replaced once the project is paid or completed",
+                "message": "Fragments cannot be replaced once the final song has been generated",
                 "project_id": project_id,
                 "current_status": project["status"],
             },

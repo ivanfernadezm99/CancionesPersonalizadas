@@ -2,7 +2,8 @@
 
 Covers:
 - Replacing the full fragment list on a draft project (200, exact match)
-- Rejecting replacement once a project is paid (409 Conflict)
+- Replacing fragments on a paid project WITHOUT a final song yet (200)
+- Rejecting replacement once a final song exists (409 Conflict)
 """
 
 from __future__ import annotations
@@ -92,10 +93,14 @@ class TestReplaceFragments:
         assert texts == new_fragments
 
     @pytest.mark.asyncio
-    async def test_replace_fragments_paid_project_409(
+    async def test_replace_fragments_paid_without_final_allowed(
         self, replace_client: AsyncClient,
     ) -> None:
-        """PUT fragments on a paid project should return 409 Conflict."""
+        """PUT fragments on a paid project with no final song yet → 200.
+
+        A paid project that still only has a 30s preview remains editable so
+        the user can tweak the lyrics before converting to the full song.
+        """
         project_id = await _create_project(replace_client)
 
         # Mark the project as paid directly via the store.
@@ -110,6 +115,53 @@ class TestReplaceFragments:
         # Verify status is paid before attempting the replacement.
         get_resp = await replace_client.get(f"/api/projects/{project_id}")
         assert get_resp.json()["status"] == "paid"
+
+        resp = await replace_client.put(
+            f"/api/projects/{project_id}/fragments",
+            json={"fragments": ["letra ajustada antes de la final"]},
+        )
+        assert resp.status_code == 200, resp.text
+
+        # New fragments should be persisted.
+        get_after = await replace_client.get(f"/api/projects/{project_id}")
+        assert get_after.status_code == 200
+        texts = [f["text"] for f in get_after.json()["fragments"]]
+        assert texts == ["letra ajustada antes de la final"]
+
+    @pytest.mark.asyncio
+    async def test_replace_fragments_with_complete_final_409(
+        self, replace_client: AsyncClient,
+    ) -> None:
+        """PUT fragments on a project with a complete final job → 409."""
+        project_id = await _create_project(replace_client)
+
+        from app.config import settings
+        from app.projects import store
+        from app.jobs import create_job, update_status
+        from app.models import GenerateRequest
+
+        # Mark the project as paid + link a complete final job.
+        found = await store.update_project_status(
+            project_id, "paid", db_path=settings.DB_PATH,
+        )
+        assert found is True
+
+        final_job_id = await create_job(
+            GenerateRequest(
+                recipient="María",
+                relationship="pareja",
+                occasion="personalizada",
+                genre="bachata",
+                mood="romántica",
+            ),
+            db_path=settings.DB_PATH,
+        )
+        await store.link_project_job(
+            project_id, final_job_id, "final", db_path=settings.DB_PATH,
+        )
+        # Walk the state machine to reach complete.
+        for step in ("lyrics_generating", "music_generating", "processing", "complete"):
+            await update_status(final_job_id, step, db_path=settings.DB_PATH)
 
         resp = await replace_client.put(
             f"/api/projects/{project_id}/fragments",
