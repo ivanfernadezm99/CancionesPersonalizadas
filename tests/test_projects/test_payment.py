@@ -346,3 +346,99 @@ class TestFinalGate:
         assert resp.status_code == 202, resp.text
         data = resp.json()
         assert "job_id" in data
+
+
+class TestFinalCompletion:
+    """Tests for final song generation completion requirements."""
+
+    @pytest.mark.asyncio
+    async def test_final_with_fragments(self, payment_client: AsyncClient) -> None:
+        """Final generation should succeed (202) when project has story fragments and is paid."""
+        project_id = await _create_project(payment_client)
+
+        # Add a story fragment first
+        await payment_client.patch(
+            f"/api/projects/{project_id}",
+            json={"fragment": {"text": "Nuestro primer viaje a la playa"}},
+        )
+
+        # Mark as paid via webhook
+        await payment_client.post(
+            "/api/webhooks/payment-confirmed",
+            json={
+                "project_id": project_id,
+                "payment_id": "mp-pay-001",
+                "status": "approved",
+            },
+            headers={"X-Webhook-Secret": "test-webhook-secret-123"},
+        )
+
+        # Verify project now has fragments and is paid
+        get_resp = await payment_client.get(f"/api/projects/{project_id}")
+        assert get_resp.json()["status"] == "paid"
+
+        # Final should succeed
+        with patch("app.projects.project_worker", new_callable=AsyncMock):
+            resp = await payment_client.post(f"/api/projects/{project_id}/final")
+
+        assert resp.status_code == 202, resp.text
+        data = resp.json()
+        assert "job_id" in data
+
+    @pytest.mark.asyncio
+    async def test_final_without_fragments(self, payment_client: AsyncClient) -> None:
+        """Final generation should return 400 when project has no story fragments, even if paid."""
+        # Create project WITHOUT adding any fragment (don't use _create_project helper)
+        create_resp = await payment_client.post(
+            "/api/projects",
+            json={
+                "recipient": "Test",
+                "relationship": "pareja",
+                "genre": "bachata",
+                "mood": "romántica",
+                "voice": "female",
+            },
+        )
+        assert create_resp.status_code == 201
+        project_id = create_resp.json()["id"]
+
+        # Verify no fragments
+        get_resp = await payment_client.get(f"/api/projects/{project_id}")
+        assert len(get_resp.json().get("fragments", [])) == 0
+
+        # Mark as paid via webhook
+        await payment_client.post(
+            "/api/webhooks/payment-confirmed",
+            json={
+                "project_id": project_id,
+                "payment_id": "mp-pay-001",
+                "status": "approved",
+            },
+            headers={"X-Webhook-Secret": "test-webhook-secret-123"},
+        )
+
+        # Final should fail with 400 no_story_fragments
+        resp = await payment_client.post(f"/api/projects/{project_id}/final")
+
+        assert resp.status_code == 400, resp.text
+        data = resp.json()
+        assert "no_story_fragments" in str(data.get("error", "")) or "story fragments" in str(
+            data.get("message", "")
+        ).lower()
+
+    @pytest.mark.asyncio
+    async def test_final_unpaid_project(self, payment_client: AsyncClient) -> None:
+        """Final generation should return 402 when project is not paid."""
+        project_id = await _create_project(payment_client)
+
+        # Do NOT mark as paid
+
+        # Final should fail with 402 payment_required
+        with patch("app.projects.project_worker", new_callable=AsyncMock):
+            resp = await payment_client.post(f"/api/projects/{project_id}/final")
+
+        assert resp.status_code == 402, resp.text
+        data = resp.json()
+        assert "payment_required" in str(data.get("error", "")) or "payment" in str(
+            data,
+        ).lower()
