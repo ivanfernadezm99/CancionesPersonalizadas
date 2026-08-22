@@ -150,7 +150,8 @@ python3 scripts/test-circuit.py --email x@y.z --password '...'
 
 Para construir una base de clientes con teléfono (mensajes, promociones), el flujo quedó así (cross-repo):
 
-- **POSBackend** (rama `staging`): el login con Google auto-crea además un `Client` mínimo (mismo email) para que exista un registro de cliente sin sucursal. El teléfono se guarda en `Client.Phone`. Endpoint nuevo `POST /api/Auth/UpdatePhone` (valida y persiste, devuelve JWT fresco con el claim `Phone`). El claim `Phone` se agrega al JWT cuando el Client tiene teléfono. `GET /api/UserManagement/current-user` ya devuelve `PhoneNumber` real.
+- **POSBackend** (rama `staging`): el login con Google auto-crea **usuario mínimo** (`Email`, `UserName = Name ?? Email`, `AuthType=GOOGLE`, `State=1` — sin sucursal/rol/negocio) y además un `Client` mínimo (mismo email, sin sucursal) para que exista registro de cliente. El teléfono se guarda en `Client.Phone`. Endpoint nuevo `POST /api/Auth/UpdatePhone` (valida y persiste, devuelve JWT fresco con el claim `Phone`). El claim `Phone` se agrega al JWT cuando el Client tiene teléfono. `GET /api/UserManagement/current-user` ya devuelve `PhoneNumber` real.
+- **POS alta es separada**: el alta del POS (Interno, con sucursal/roles/negocio) **no se toca** — carga datos completos de negocio y es otro flujo. Canciones/Google nunca crea sucursal ni rol; solo el mínimo para identidad + teléfono.
 - **POSFrontReform** (rama `stg`): tras login Google, si el JWT no trae `Phone` claim → muestra un formulario opcional de celular una vez → llama a `Auth/UpdatePhone` → continúa. Hay botón "Omitir".
 - **POSCuentasCorrientes** (rama `stg`): la página de preview muestra `Contacto: email · teléfono` leídos del JWT del usuario logueado.
 
