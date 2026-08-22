@@ -54,9 +54,15 @@ async def cleanup_old_jobs(
                 continue
 
             # Delete job (transitions first due to FK), plus its project_jobs
-            # link so no orphaned preview rows remain.
+            # link so no orphaned preview rows remain. project_jobs lives in the
+            # projects schema — skip it defensively when a jobs-only DB is used
+            # (e.g. tests or a fresh standalone instance).
             await conn.execute("DELETE FROM job_transitions WHERE job_id = ?", (job_id,))
-            await conn.execute("DELETE FROM project_jobs WHERE job_id = ?", (job_id,))
+            has_project_jobs = await conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_jobs'"
+            )
+            if await has_project_jobs.fetchone():
+                await conn.execute("DELETE FROM project_jobs WHERE job_id = ?", (job_id,))
             await conn.execute("DELETE FROM jobs WHERE job_id = ?", (job_id,))
             deleted.append(job_id)
 
