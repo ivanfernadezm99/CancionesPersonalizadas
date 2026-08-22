@@ -9,7 +9,14 @@ from typing import Any
 
 from fastapi import HTTPException, Request, status
 
-from app.auth.middleware import EMAIL_URI, NAMEID_URI, NAMEID_URI_ASPNET, _verify_token
+from app.auth.middleware import (
+    EMAIL_SHORT,
+    EMAIL_URI,
+    NAMEID_SHORT,
+    NAMEID_URI,
+    NAMEID_URI_ASPNET,
+    _verify_token,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +29,12 @@ async def get_current_user(request: Request) -> dict[str, str]:
     claims, result = await _verify_token(header.removeprefix("Bearer "))
     if claims is None or result.value != "ok":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_token")
-    user_id = str(claims.get(NAMEID_URI, "") or claims.get(NAMEID_URI_ASPNET, ""))
+    user_id = str(
+        claims.get(NAMEID_URI, "") or claims.get(NAMEID_URI_ASPNET, "") or claims.get(NAMEID_SHORT, "") or claims.get("nameid", "")
+    )
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user_id_required")
-    email = str(claims.get(EMAIL_URI, "") or claims.get("email", ""))
+    email = str(claims.get(EMAIL_URI, "") or claims.get(EMAIL_SHORT, "") or claims.get("Email", ""))
     return {"user_id": user_id, "email": email}
 
 

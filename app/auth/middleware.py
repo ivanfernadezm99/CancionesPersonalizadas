@@ -45,6 +45,11 @@ NAMEID_URI_ASPNET = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/namei
 EMAIL_URI = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
 ROLE_URI = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
 BUSINESS_CLAIM = "BusinessId"
+# Short JWT names used when JwtSecurityTokenHandler maps ClaimTypes (DefaultOutboundClaimTypeMap)
+NAMEID_SHORT = "sub"
+EMAIL_SHORT = "email"
+ROLE_SHORT = "role"
+NAME_SHORT = "unique_name"
 
 
 class AuthResult(Enum):
@@ -178,10 +183,27 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Token valid — extract claims into request.state (always, including public prefixes)
-        user_id = str(claims.get(NAMEID_URI, "") or claims.get(NAMEID_URI_ASPNET, "") or "")  # type: ignore[union-attr]
+        # Support both full URI claims and short JWT names (sub/email/unique_name) for
+        # compatibility with JwtSecurityTokenHandler DefaultOutboundClaimTypeMap.
+        user_id = str(
+            claims.get(NAMEID_URI, "")  # type: ignore[union-attr]
+            or claims.get(NAMEID_URI_ASPNET, "")  # type: ignore[union-attr]
+            or claims.get(NAMEID_SHORT, "")  # type: ignore[union-attr]
+            or claims.get("nameid", "")  # type: ignore[union-attr]
+            or ""
+        )
         request.state.user_id = user_id
-        request.state.email = str(claims.get(EMAIL_URI, "") or claims.get("email", ""))  # type: ignore[union-attr]
-        request.state.role = str(claims.get(ROLE_URI, ""))  # type: ignore[union-attr]
+        request.state.email = str(
+            claims.get(EMAIL_URI, "")  # type: ignore[union-attr]
+            or claims.get(EMAIL_SHORT, "")  # type: ignore[union-attr]
+            or claims.get("Email", "")  # type: ignore[union-attr]
+            or ""
+        )
+        request.state.role = str(
+            claims.get(ROLE_URI, "")  # type: ignore[union-attr]
+            or claims.get(ROLE_SHORT, "")  # type: ignore[union-attr]
+            or ""
+        )
         request.state.business_id = str(claims.get(BUSINESS_CLAIM, ""))  # type: ignore[union-attr]
 
         # Role enforcement — only on protected (non-public-prefix) routes
