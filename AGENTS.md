@@ -161,3 +161,43 @@ El cleanup TTL (`app/jobs/cleanup.py`, `JOB_TTL_HOURS`) **NUNCA borra jobs con s
 ### Importación manual de canciones (recuperación)
 
 Cuando un mp3 sobrevive pero su fila de `jobs` fue purgada por el TTL (ej. las canciones de `~/Descargas/CancionesPersonalizadas-Audio/`), se re-linkea así: copiá el mp3 a `output/<job_id>/generated.mp3` (job_id tipo `manual-*`), insertá la fila en `jobs` (status `complete`, params con `project_id`) y el link en `project_jobs` (job_type `preview`/`final`). Cuidado: `project_jobs` alimenta el contador de la landing (`/api/projects/stats`), así que al importar/borrar filas el contador cambia. El contador muestra `previews + songs + MANUAL_SONGS_OFFSET(1)`.
+
+### Recuperación hecha (21/08): canciones importadas al panel
+
+- **Mamá ×6** (`manual-mama-*`): 01-FINAL (final, proyecto pago `9db74251`), 02-Preview, 03-PaymentPending, 04-Hijo, 06-Ahora + **05-Pareja recuperada de la papelera** (`~/.local/share/Trash/` → proyecto `63d46bed`, preview importable).
+- **Valentina** (`manual-valentina-01`, preview en `48cca1b6`): venía como `voice_message_2026-07-28T0326Z.m4a` que era **base64** de un m4a; decodificado con `base64 -d`, convertido a mp3 con ffmpeg. Le canta el nombre a Valentina.
+- ⚠️ **`05-Mama-Pareja` NO es una canción**: es una nota de voz con instrucciones de generación ("canción feliz de cumbia, masculina...") — no se importa como preview.
+- Trash del file manager SÍ puede tener archivos borrados manualmente (el TTL del backend usa `unlink` directo, no pasa por papelera).
+
+## Pago (Mercado Pago) — flujo y fixes (21/08)
+
+El circuito completo: front → `POST /api/projects/{id}/checkout` (CP) → proxy a POSBackend `/api/checkout` (sin JWT, credenciales globales `Checkout:MercadoPago` de Railway) → preference MP → el usuario paga → MP notifica POSBackend `/api/integrations/mercadopago/notify` (HMAC) → POSBackend dispara webhook saliente a CP `/api/webhooks/payment-confirmed` con `X-Webhook-Secret` → CP marca `paid` (idempotente).
+
+**Config imprescindible (Railway POSBackend):**
+- `Checkout__WebhookSecret` **DEBE ser idéntico** a `PAYMENT_WEBHOOK_SECRET` de CP (hoy ambos = 64 chars, verificados). Si difieren → CP responde `{"error":"invalid_webhook_secret"}` y el proyecto nunca pasa a `paid`.
+- `Checkout__WebhookUrl` = `https://canciones.enlaceschaco.ar/api/webhooks/payment-confirmed`.
+- `Checkout:MercadoPago:AccessToken/PublicKey` en producción (`APP_USR-...`, `IsSandbox=false`).
+
+**Fixes de redirección (CP, commit `3fc1d9d`):**
+- `GET /payment/success` y `GET /payment/failure` son rutas públicas que hacen **307** al frontend (`#/canciones/download/:id` y `#/canciones/checkout/:id`). Antes devolvían `{"error":"unauthorized"}` (401) porque la ruta no existía y no era pública.
+- `FRONTEND_BASE_URL` (config, `.env.docker`): el `success_url`/`failure_url` de las preferencias NUEVAS apuntan directo al frontend; fallback a las rutas `/payment/*` solo si no hay front configurado.
+
+## Generación de letras (LLM providers) — fixes 21/08
+
+- **Modelos de razonamiento**: `deepseek-v4-flash` y los modelos Zen (`big-pickle`, `nemotron`) gastan TODO el presupuesto en `reasoning_content` si `max_tokens` es chico → `content` vacío. Los providers OpenAI-compat usan **`max_tokens=8000`** y **fallback a `reasoning_content`** cuando `content` viene vacío. (Un solo call de DeepSeek puede razonar 4-5k tokens antes de escribir.)
+- **Parseo tolerante** (`_parse_lyrics_json`): si el modelo envuelve el JSON en prosa, extrae el bloque `{...}` entre el primer `{` y el último `}`.
+- **Letras del usuario**: `project_worker` usa VERBATIM los fragments cuando tienen estructura completa (`Estrofa N/Estribillo/Puente` o `[Verse]/[Chorus]`) — es lo que guarda el autodraft del front vía `replaceFragments` — sin regenerar por LLM (`lyrics_provider: custom_fragments`). El set del autodraft exige ≥1 verso + estribillo para considerarlo "completo". Stories libres → LLM.
+- **Cascada actual** (el primero que responda gana): `zen-big-pickle` → `zen-nemotron` → `opencode-go` → `deepseek` → `openai` → `gemini` → `openrouter`.
+- **Providers config** (keys en `.env`, gitignored; `docker-compose.override.yml` las inyecta):
+  - `ZEN_API_KEY` → `https://opencode.ai/zen/v1`
+  - `OPENCODE_GO_API_KEY` → **`https://opencode.ai/zen/go/v1`**, modelo `deepseek-v4-flash` SIN prefijo (con `opencode-go/` da `ModelError`). El endpoint salió del registry compilado del binario opencode.
+  - `DEEPSEEK_API_KEY` → `https://api.deepseek.com/v1`, `deepseek-v4-flash`
+  - `OPENAI_API_KEY` (SIN créditos — 429), `GEMINI_API_KEY` (503), `OPENROUTER_API_KEY`.
+
+## Problemas conocidos / pendientes
+
+- **`/v1/models` 401 cada ~2 min**: algo en el HOST (172.22.0.1) pega a CP `:8001/v1/models` sin auth → ruido en logs. No está en configs de opencode/hermes/gateway/scripts/MCP. Cosmético; falta identificar el consumidor (¿alguna herramienta usa `localhost:8001` como endpoint OpenAI?).
+- **`zen-big-pickle` devuelve 500** del lado del server de Zen (flaky) — la cascada lo saltea.
+- **`test_jobs_cleanup.py`** tuvo drift de fixture (`no such table: project_jobs`) — corregido con guard defensivo en `cleanup.py` (borra `project_jobs` solo si existe).
+- **QA pendiente**: probar con una canción real que la final cante la letra del autodraft (fragments).
+- Wedding/QA: contador landing = `previews + songs + MANUAL_SONGS_OFFSET(1)`; hoy = 27 (25 previews + 1 final + 1 offset).
